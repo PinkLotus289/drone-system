@@ -1,0 +1,20 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports: ["1883:1883"]
+    volumes:
+      - ./infra/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  postgres:
+    image: postgres:15
+    restart: always
+    ports: [ "5432:5432" ]
+    environment:
+      POSTGRES_USER: drone
+      POSTGRES_PASSWORD: dronepass
+      POSTGRES_DB: drones
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  pg_data:
