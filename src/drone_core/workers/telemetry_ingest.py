@@ -1,58 +1,76 @@
-import asyncio
 import json
 import logging
 import sys
 from pathlib import Path
+import asyncio
+import time
 
-# --- гарантируем доступ к пакету src ---
+# гарантируем доступ к src/
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
+from drone_core.config.settings import Settings
 from drone_core.infra.messaging.mqtt_bus import MqttBus
 from drone_core.infra.messaging.topics import TelemetryTopics
 from drone_core.infra.repositories import make_repos
+from drone_core.infra.messaging.bus import Message  # тип сообщения от MQTT
 
 logger = logging.getLogger("telemetry-ingest")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
 
-# создаём репозитории (FleetMem или FleetPg — выберется автоматически)
 fleet_repo, _ = make_repos()
+LAST_TELEM = {}
 
 
-async def handle_message(topic: str, payload: str):
-    """Обработка входящей телеметрии."""
+def handle_message(msg: Message):
+    """Обработка входящих сообщений от MQTT."""
     try:
+        topic = msg.topic
+        payload = msg.payload
+
         parts = topic.split("/")
         if len(parts) < 3:
             logger.warning(f"Некорректный топик: {topic}")
             return
 
         _, veh_id, telem_type = parts
-        data = json.loads(payload)
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                pass
 
-        if telem_type == "pose":
-            await fleet_repo.update_pose(veh_id, data)
-            logger.info(f"<< pose {veh_id}: {data}")
-        elif telem_type == "battery":
-            await fleet_repo.update_battery(veh_id, data)
-            logger.info(f"<< battery {veh_id}: {data}")
-        elif telem_type == "health":
-            await fleet_repo.update_health(veh_id, data)
-            logger.info(f"<< health {veh_id}: {data}")
-        else:
-            logger.debug(f"Неизвестный тип телеметрии {telem_type}: {data}")
+        d = LAST_TELEM.setdefault(veh_id, {})
+        d[telem_type] = payload
+
+        logger.info(f"<< {telem_type} {veh_id}: {payload}")
 
     except Exception as e:
-        logger.error(f"Ошибка обработки телеметрии: {e}")
+        logger.exception(f"Ошибка обработки телеметрии: {e}")
 
 
-async def main():
+def main():
     logger.info("Telemetry Ingest запускается...")
-    bus = MqttBus(client_id="telemetry-ingest")
-    await bus.connect()
-    await bus.subscribe(TelemetryTopics.ALL, handle_message)
-    logger.info(f"Подписан на {TelemetryTopics.ALL}")
-    await asyncio.Future()  # keep alive
+
+    settings = Settings()
+    bus = MqttBus(settings.MQTT_URL, client_id="telemetry-ingest")
+
+    # Подписываемся на все телеметрические топики
+    bus.subscribe(TelemetryTopics.ALL, handle_message)
+
+    # Запускаем MQTT-потоки
+    bus.start()
+
+    # Держим процесс живым
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Останавливаем Telemetry Ingest...")
+        bus.stop()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
