@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Drone System Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Drone System Dashboard</h1>
+  <nav>
+    <button class="tab-btn active" data-tab="orders">🛰️ Orders</button>
+    <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+    <button class="tab-btn" data-tab="fleet">🚁 Fleet</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ========== Вкладка Orders ========== -->
+  <section id="orders" class="tab active">
+    <div id="orders-panel">
+      <h2>Создать заказ</h2>
+      <form id="orderForm">
+        <label>Пункт A (забрать):</label><br>
+        <input id="from-lat" placeholder="lat" type="number" step="0.000001">
+        <input id="from-lon" placeholder="lon" type="number" step="0.000001"><br>
+
+        <label>Пункт B (доставить):</label><br>
+        <input id="to-lat" placeholder="lat" type="number" step="0.000001">
+        <input id="to-lon" placeholder="lon" type="number" step="0.000001"><br>
+
+        <label>Дрон:</label>
+        <select id="droneSelect"></select><br>
+
+        <label>Вес груза (кг):</label>
+        <input id="orderWeight" type="number" value="5" step="0.1"><br>
+
+        <button type="submit">Создать заказ</button>
+      </form>
+
+      <h3>Активные заказы</h3>
+      <ul id="orders-list"></ul>
+    </div>
+    <div id="map"></div>
+  </section>
+
+  <!-- ========== Вкладка Settings ========== -->
+  <section id="settings" class="tab">
+    <div id="settings-panel">
+      <h2>Настройки системы</h2>
+      <form id="settingsForm">
+        <label>Координаты базы:</label><br>
+        <input id="base-lat" placeholder="lat" type="number" step="0.000001">
+        <input id="base-lon" placeholder="lon" type="number" step="0.000001"><br>
+
+        <label>Количество дронов:</label>
+        <input id="drone-count" type="number" value="1"><br>
+
+        <label>Скорость симуляции:</label>
+        <input id="sim-speed" type="number" value="1.0" step="0.1"><br>
+
+        <label>MQTT-хост:</label>
+        <input id="mqtt-host" type="text" value="localhost"><br>
+
+        <label>MAVSDK-порт:</label>
+        <input id="mavsdk-port" type="number" value="14540"><br>
+
+        <button type="submit">Сохранить настройки</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ========== Вкладка Fleet ========== -->
+  <section id="fleet" class="tab">
+    <div id="fleet-panel">
+      <h2>Флот дронов</h2>
+      <table id="fleet-table">
+        <thead>
+        <tr>
+          <th>ID</th>
+          <th>Статус</th>
+          <th>Позиция</th>
+          <th>Батарея</th>
+          <th>Миссия</th>
+        </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

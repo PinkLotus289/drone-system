@@ -2,5 +2,15 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/jmavsim/jMAVSim" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/jmavsim/jMAVSim/jMAVlib" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/build/px4_sitl_default/src/modules/uxrce_dds_client/src/libmicroxrceddsclient_project-build/microcdr/src/microcdr" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/gps/devices" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/events/libevents" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/heatshrink/heatshrink" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/modules/mavlink/mavlink" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/modules/mavlink/mavlink/pymavlink" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/modules/uxrce_dds_client/Micro-XRCE-DDS-Client" vcs="Git" />
   </component>
 </project>

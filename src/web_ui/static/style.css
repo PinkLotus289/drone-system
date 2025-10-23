@@ -1,0 +1,72 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f2f2f2;
+}
+
+header {
+  background: #222;
+  color: #fff;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+nav button {
+  background: #444;
+  color: #fff;
+  border: none;
+  padding: 8px 15px;
+  margin-left: 5px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+nav button.active {
+  background: #0084ff;
+}
+
+main {
+  height: calc(100vh - 60px);
+  display: flex;
+}
+
+.tab {
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.tab.active {
+  display: flex;
+}
+
+#map {
+  flex: 1;
+  height: 100%;
+}
+
+#orders-panel, #settings-panel, #fleet-panel {
+  width: 320px;
+  background: #fff;
+  border-right: 1px solid #ccc;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+form input, form select, form button {
+  width: 100%;
+  margin: 5px 0;
+  padding: 5px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 5px;
+  border: 1px solid #ccc;
+  text-align: left;
+}
