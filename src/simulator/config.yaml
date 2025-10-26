@@ -4,20 +4,23 @@ mqtt:
 
 simulator:
   num_drones: 2
-
-base:
-  lat: 43.07470   # Madison, WI
-  lon: -89.38420
+  model: "none"
+  home:
+    lat: 43.0747
+    lon: -89.3842
+    alt: 270.0
 
 drones:
   - id: 0
     name: "sim_drone_1"
     px4_path: "PX4-Autopilot"
     udp_port: 14540
+    mavlink_out: 14550
     instance: 0
 
   - id: 1
     name: "sim_drone_2"
     px4_path: "PX4-Autopilot"
     udp_port: 14541
+    mavlink_out: 14551
     instance: 1

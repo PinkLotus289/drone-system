@@ -1,98 +1,129 @@
 # src/web_ui/main.py
+from __future__ import annotations
 import json, asyncio, yaml
 from pathlib import Path
-from fastapi import FastAPI, WebSocket
+from typing import Any, Dict
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-import paho.mqtt.client as mqtt
+
+from drone_core.config.settings import Settings
+from drone_core.infra.repositories import make_repos
+from drone_core.domain.models import Order, LLA
+from drone_core.infra.messaging.mqtt_bus import MqttBus
 
 APP_ROOT = Path(__file__).parents[1]
 SIM_CFG = APP_ROOT / "simulator" / "config.yaml"
 
 app = FastAPI(title="Drone System Dashboard")
-app.mount("/static", StaticFiles(directory="src/web_ui/static"), name="static")
+app.mount("/static", StaticFiles(directory=str(APP_ROOT / "web_ui" / "static")), name="static")
+
+settings = Settings()
+bus = MqttBus(settings.MQTT_URL)
+fleet_repo, missions_repo = make_repos()
+
+def read_cfg() -> Dict[str, Any]:
+    with open(SIM_CFG, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
 @app.get("/")
 async def index():
-    return FileResponse("src/web_ui/static/index.html")
+    return FileResponse(str(APP_ROOT / "web_ui" / "static" / "index.html"))
 
-# ---- settings helpers ----
-def read_cfg():
-    return yaml.safe_load(SIM_CFG.read_text())
-
-def write_cfg(cfg):
-    SIM_CFG.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
-
-@app.get("/api/settings")
-async def get_settings():
+@app.get("/api/base")
+async def api_base():
     cfg = read_cfg()
-    return {"base": cfg.get("base"), "drone_count": len(cfg.get("drones", []))}
+    base = cfg.get("base", {"lat": 43.07470, "lon": -89.38420})
+    return base
 
-@app.post("/api/settings")
-async def update_settings(body: dict):
-    """
-    body: {"base": {"lat":..,"lon":..}, "drone_count": N, "mavsdk_port_start":14540}
-    """
-    cfg = read_cfg()
-    if "base" in body:
-        cfg["base"] = body["base"]
-
-    if "drone_count" in body:
-        start = int(body.get("mavsdk_port_start", 14540))
-        # перегенерируем список дронов с последовательными портами
-        cfg["drones"] = [{
-            "id": f"sim_drone_{i+1}",
-            "px4_path": "./PX4-Autopilot",
-            "world": "none",
-            "mavsdk_port": start + i,
-            "mqtt_prefix": f"drone/sim_drone_{i+1}",
-            "speedup": 1.0
-        } for i in range(int(body["drone_count"]))]
-
-    write_cfg(cfg)
-    return {"status": "ok", "drones": cfg["drones"]}
-
-# ---- drones list for UI ----
 @app.get("/api/drones")
-async def get_drones():
+async def api_drones():
+    drones = await fleet_repo.list_all()
+    return [d.dict() for d in drones]
+
+@app.get("/api/missions")
+async def api_missions():
+    ms = await missions_repo.list_active()
+    return [m.dict() for m in ms]
+
+@app.post("/api/orders")
+async def api_orders(body: Dict[str, Any]):
     cfg = read_cfg()
-    return {"drones": [{"id": d["id"], "port": d["mavsdk_port"]} for d in cfg.get("drones", [])]}
+    base_cfg = cfg.get("base", {"lat": 43.07470, "lon": -89.38420})
+    base = LLA(lat=float(base_cfg["lat"]), lon=float(base_cfg["lon"]), alt=60.0)
 
-# ---- MQTT → WebSocket telemetry fanout ----
-telemetry_clients = set()
+    # поддержка обоих форматов
+    addr1 = body.get("addr1") or {
+        "lat": body.get("pickup_lat"),
+        "lon": body.get("pickup_lon"),
+        "alt": 60.0
+    }
+    addr2 = body.get("addr2") or {
+        "lat": body.get("drop_lat"),
+        "lon": body.get("drop_lon"),
+        "alt": 60.0
+    }
+
+    payload_kg = float(body.get("payload_kg", 2.0))
+    priority = body.get("priority", "normal")
+
+    # проверим, что координаты есть
+    if not addr1["lat"] or not addr1["lon"] or not addr2["lat"] or not addr2["lon"]:
+        return {"error": "missing coordinates"}
+
+    order = Order(
+        base=base,
+        addr1=LLA(**addr1),
+        addr2=LLA(**addr2),
+        payload_kg=payload_kg,
+        priority=priority,
+    )
+
+    bus.publish("orders/new", order.dict())
+    return {"status": "ok", "order_id": order.id}
+
+# ---- MQTT → WebSocket fanout ----
+telemetry_clients: set[WebSocket] = set()
+
 @app.on_event("startup")
-async def startup():
-    loop = asyncio.get_event_loop()
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="web-ui")
-    client.connect("localhost", 1883, 60)
+async def _startup():
+    bus.start()
 
-    def on_message(client, userdata, msg):
-        data = msg.payload.decode()
-        # шлём всем подписчикам “как есть”
-        for ws in telemetry_clients.copy():
-            asyncio.run_coroutine_threadsafe(ws.send_text(data), loop)
+@app.websocket("/ws")
+async def ws(ws: WebSocket):
+    await ws.accept()
+    telemetry_clients.add(ws)
 
-    client.on_message = on_message
-    client.subscribe("drone/+/telemetry/position")
-    client.loop_start()
+    # локальный обработчик MQTT, вещает всем WS-клиентам
+    def _mqtt_handler(message):
+        data = {
+            "topic": message.topic,
+            "payload": message.payload if not isinstance(message.payload, bytes)
+                       else json.loads(message.payload.decode("utf-8")),
+        }
+        dead = []
+        for c in list(telemetry_clients):
+            try:
+                asyncio.run_coroutine_threadsafe(c.send_text(json.dumps(data)), asyncio.get_event_loop())
+            except Exception:
+                dead.append(c)
+        for d in dead:
+            try:
+                telemetry_clients.remove(d)
+            except Exception:
+                pass
 
-@app.websocket("/ws/telemetry")
-async def telemetry_ws(websocket: WebSocket):
-    await websocket.accept()
-    telemetry_clients.add(websocket)
+    # подписки для UI
+    bus.subscribe("telem/+/+", _mqtt_handler, qos=0)
+    bus.subscribe("mission/+/planned", _mqtt_handler, qos=1)
+    bus.subscribe("mission/+/status", _mqtt_handler, qos=1)
+    bus.subscribe("mission/+/assigned", _mqtt_handler, qos=1)
+
     try:
         while True:
-            await websocket.receive_text()
-    except Exception:
-        telemetry_clients.discard(websocket)
-
-# ---- demo orders API (как было) ----
-orders = []
-@app.post("/api/orders")
-async def create_order(order: dict):
-    orders.append(order)
-    return {"status": "created", "order": order}
-
-@app.get("/api/orders")
-async def get_orders():
-    return {"orders": orders}
+            await ws.receive_text()  # держим соединение
+    except WebSocketDisconnect:
+        pass
+    finally:
+        telemetry_clients.discard(ws)

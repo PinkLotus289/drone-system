@@ -1,77 +1,48 @@
 from __future__ import annotations
 import math
-import asyncio
-import logging
-from drone_core.infra.repositories import make_repos
-from drone_core.domain.models import MissionStatus, Waypoint, LLA
-
-log = logging.getLogger("planner")
+from typing import List
+from drone_core.domain.models import Order, Mission, Waypoint, LLA, MissionStatus
 
 
-class Planner:
-    """Упрощённый планировщик маршрутов (MVP)."""
-
-    def __init__(self):
-        self.fleet_repo, self.missions_repo = make_repos()
-
-    async def plan_mission(self, mission_id: str):
-        """Построить маршрут для миссии (home → pickup → drop → home_rtl)."""
-        mission = await self.missions_repo.get(mission_id)
-        if not mission:
-            log.error(f"Mission {mission_id} not found")
-            return None
-
-        # Выбор дрона (просто первый свободный)
-        free = await self.fleet_repo.list_free()
-        if not free:
-            log.warning("No free vehicles to assign")
-            return None
-        vehicle = free[0]
-
-        # Назначаем дрон
-        await self.missions_repo.assign_vehicle(mission.id, vehicle.id)
-        await self.fleet_repo.set_status(vehicle.id, vehicle.status.BUSY)
-
-        # Строим маршрут (прямая линия между pickup и dropoff)
-        wps = self._build_route(vehicle.home, mission.pickup, mission.dropoff)
-        await self.missions_repo.save_waypoints(mission.id, wps)
-        await self.missions_repo.set_status(mission.id, MissionStatus.PLANNED)
-
-        log.info(f"Mission {mission.id} planned with {len(wps)} waypoints for {vehicle.id}")
-        return wps
-
-    def _build_route(self, home: LLA, pickup: LLA, drop: LLA):
-        """Формирует стандартный маршрут home → pickup → drop → home_rtl."""
-        return [
-            Waypoint(kind="home", pos=home, order=0),
-            Waypoint(kind="pickup", pos=pickup, order=1),
-            Waypoint(kind="drop", pos=drop, order=2),
-            Waypoint(kind="home_rtl", pos=home, order=3),
-        ]
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371000.0
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
 
 
-async def _test():
-    planner = Planner()
-    from drone_core.domain.models import Mission, LLA, Vehicle
-    fleet, missions = planner.fleet_repo, planner.missions_repo
+def plan_order(order: Order, cruise_mps: float = 10.0) -> Mission:
+    """
+    Прямолинейный маршрут (MVP): base -> addr1 -> addr2 -> base.
+    """
+    base = order.base
+    a1 = order.addr1
+    a2 = order.addr2
 
-    # ✅ добавляем хотя бы один дрон
-    v = Vehicle(name="sim-veh-1", home=LLA(lat=52.0, lon=21.0, alt=30))
-    await fleet.add(v)
+    wps: List[Waypoint] = [
+        Waypoint(pos=LLA(lat=base.lat, lon=base.lon, alt=base.alt), kind="TAKEOFF"),
+        Waypoint(pos=LLA(lat=a1.lat, lon=a1.lon, alt=a1.alt), kind="NAV", hold_s=3.0),
+        Waypoint(pos=LLA(lat=a2.lat, lon=a2.lon, alt=a2.alt), kind="NAV", hold_s=3.0),
+        Waypoint(pos=LLA(lat=base.lat, lon=base.lon, alt=base.alt), kind="LAND"),
+    ]
 
-    # 🛰 создаём миссию
-    m = Mission(pickup=LLA(lat=52.1, lon=21.1), dropoff=LLA(lat=52.2, lon=21.2))
-    await missions.create(m)
+    d = 0.0
+    d += _haversine_m(base.lat, base.lon, a1.lat, a1.lon)
+    d += _haversine_m(a1.lat, a1.lon, a2.lat, a2.lon)
+    d += _haversine_m(a2.lat, a2.lon, base.lat, base.lon)
 
-    # 🚀 запускаем планирование маршрута
-    wps = await planner.plan_mission(m.id)
-    if not wps:
-        print("❌ Нет свободных дронов — маршрут не построен")
-        return
+    # грубо ETA = время полёта + 60с на взлёт/посадку/манёвры
+    eta_s = d / max(cruise_mps, 0.1) + 60.0
 
-    print(f"✅ Маршрут для миссии {m.id}:")
-    for wp in wps:
-        print(f" - {wp.kind}: {wp.pos.lat:.4f}, {wp.pos.lon:.4f}")
-
-if __name__ == "__main__":
-    asyncio.run(_test())
+    m = Mission(
+        payload_kg=order.payload_kg,
+        priority=order.priority,
+        pickup=a1,    # для совместимости
+        dropoff=a2,   # для совместимости
+        waypoints=wps,
+        status=MissionStatus.PLANNED,
+    )
+    return m
