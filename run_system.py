@@ -68,19 +68,19 @@ async def connect_to_px4(drone_id: int, port: int, timeout: int = 120):
 
 
 # === Запуск подпроцессов ===
-'''
 def run_component(name: str, cmd: list[str], cwd: str | None = None):
     """Запускает компонент как подпроцесс с видимым логом"""
     print(f"▶️  {name}: {' '.join(cmd)} (cwd={cwd or os.getcwd()})")
-    log_path = Path(f"{name.lower().replace(' ', '_')}.log")
+    #log_path = Path(f"{name.lower().replace(' ', '_')}.log")
     return subprocess.Popen(
         cmd,
         cwd=cwd,
-        stdout=open(log_path, "w"),
+        #stdout=open(log_path, "w"),
         stderr=subprocess.STDOUT,
         text=True
-    )'''
+    )
 
+'''
 def run_component(name: str, cmd: list[str], cwd: str | None = None):
     print(f"▶️  {name}: {' '.join(cmd)} (cwd={cwd or os.getcwd()})")
     proc = subprocess.Popen(
@@ -100,7 +100,7 @@ def run_component(name: str, cmd: list[str], cwd: str | None = None):
     except Exception as e:
         print(f"[{name}] Ошибка чтения stdout: {e}")
     return proc
-
+'''
 
 # === Основной запуск ===
 async def start_all():
@@ -123,6 +123,14 @@ async def start_all():
     # ждём, пока все дроны подключатся
     drones = await asyncio.gather(*tasks)
     print("✅ Все MAVSDK-соединения установлены!")
+
+    # ▶️  MAVSDK Bridge — публикует телеметрию PX4 → MQTT
+    print("▶️  MAVSDK Bridge: python -m simulator.mavsdk_bridge")
+    mavsdk_bridge = run_component(
+        "MAVSDK Bridge",
+        ["python", "-m", "simulator.mavsdk_bridge"],
+        cwd="src"
+    )
 
     # 3️⃣ Теперь можно запускать остальные сервисы
     print("▶️  Telemetry Ingest: python -m drone_core.workers.telemetry_ingest")
@@ -147,7 +155,7 @@ async def start_all():
     except KeyboardInterrupt:
         print("\n🧹 Завершаем все процессы...")
     finally:
-        all_procs = [telemetry, orchestrator, web_ui, *procs]
+        all_procs = [telemetry, orchestrator, web_ui, mavsdk_bridge, *procs]
         for p in all_procs:
             if p and p.poll() is None:
                 p.terminate()
