@@ -121,16 +121,39 @@ async function loadDrones(){
 }
 loadDrones();
 
-// -------- Telemetry WS (many drones) --------
+// -------- Telemetry + Fleet events WS --------
 const ws = new WebSocket(`ws://${location.host}/ws/telemetry`);
-ws.onmessage = (ev)=>{
-  try{
-    const t = JSON.parse(ev.data);
-    const id = t.id || "sim_drone_1";
-    if (!drones[id]) {
-      drones[id] = L.marker([t.lat, t.lon]).addTo(map).bindPopup(id);
-    } else {
-      drones[id].setLatLng([t.lat, t.lon]);
+ws.onmessage = (ev) => {
+  try {
+    const msg = JSON.parse(ev.data);
+
+    // 🔹 1. Новый активный дрон — рисуем сразу
+    if (msg.type === "drone_active") {
+      console.log("🛰️ Новый дрон активен:", msg.payload);
+      const d = msg.payload;
+      const id = d.id || "drone";
+      if (!drones[id]) {
+        drones[id] = L.marker([d.lat, d.lon])
+          .addTo(map)
+          .bindPopup(`Drone ${id} (${d.status || "IDLE"})`);
+      }
+      return;
     }
-  }catch(e){ console.error(e); }
+
+    // 🔹 2. Телеметрия (обновляем позицию)
+    if (msg.type === "telemetry_update" || msg.topic?.startsWith("telem/")) {
+      const t = msg.payload || msg;
+      const id = t.id || "sim_drone_1";
+      if (!drones[id]) {
+        drones[id] = L.marker([t.lat, t.lon]).addTo(map).bindPopup(id);
+      } else {
+        drones[id].setLatLng([t.lat, t.lon]);
+      }
+      return;
+    }
+
+  } catch (e) {
+    console.error(e);
+  }
 };
+

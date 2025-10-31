@@ -7,14 +7,46 @@ import asyncio
 from pathlib import Path
 from mavsdk import System
 from src.simulator.px4_launcher import start_px4_instances
-
+import socket
 
 # === MQTT ===
 def ensure_mqtt():
+    """Проверяет, работает ли локальный брокер MQTT, и запускает его при необходимости."""
+    host = "127.0.0.1"
+    port = 1883
+
+    def is_port_open(host, port):
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return True
+        except OSError:
+            return False
+
     print("🔌 Проверяем MQTT брокер...")
-    os.system("docker rm -f mosquitto-local > /dev/null 2>&1")
-    os.system("docker run -d --name mosquitto-local -p 1883:1883 eclipse-mosquitto:2")
-    print("✅ MQTT брокер запущен (eclipse-mosquitto:2)")
+
+    # Проверяем, запущен ли уже брокер
+    if is_port_open(host, port):
+        print(f"✅ MQTT брокер уже запущен на {host}:{port}")
+        return
+
+    print("⚙️  MQTT брокер не найден, пробуем запустить локально...")
+    try:
+        # Запускаем Mosquitto как фоновый процесс
+        subprocess.Popen(
+            ["mosquitto", "-v"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(1)
+
+        if is_port_open(host, port):
+            print(f"✅ MQTT брокер успешно запущен локально ({host}:{port})")
+        else:
+            print("❌ Не удалось запустить локальный MQTT брокер. Проверь установку Mosquitto.")
+            print("   Подсказка: brew install mosquitto")
+    except FileNotFoundError:
+        print("❌ Mosquitto не найден в системе.")
+        print("   Установи через Homebrew: brew install mosquitto")
 
 
 # === Подключение MAVSDK к PX4 ===
@@ -36,9 +68,38 @@ async def connect_to_px4(drone_id: int, port: int, timeout: int = 120):
 
 
 # === Запуск подпроцессов ===
-def run_component(name: str, cmd: list[str]):
-    print(f"▶️  {name}: {' '.join(cmd)}")
-    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+'''
+def run_component(name: str, cmd: list[str], cwd: str | None = None):
+    """Запускает компонент как подпроцесс с видимым логом"""
+    print(f"▶️  {name}: {' '.join(cmd)} (cwd={cwd or os.getcwd()})")
+    log_path = Path(f"{name.lower().replace(' ', '_')}.log")
+    return subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdout=open(log_path, "w"),
+        stderr=subprocess.STDOUT,
+        text=True
+    )'''
+
+def run_component(name: str, cmd: list[str], cwd: str | None = None):
+    print(f"▶️  {name}: {' '.join(cmd)} (cwd={cwd or os.getcwd()})")
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True
+    )
+    # Читаем первые строки, чтобы понять, что реально происходит
+    try:
+        for _ in range(10):
+            line = proc.stdout.readline()
+            if not line:
+                break
+            print(f"[{name}] {line.strip()}")
+    except Exception as e:
+        print(f"[{name}] Ошибка чтения stdout: {e}")
+    return proc
 
 
 # === Основной запуск ===
@@ -65,13 +126,17 @@ async def start_all():
 
     # 3️⃣ Теперь можно запускать остальные сервисы
     print("▶️  Telemetry Ingest: python -m drone_core.workers.telemetry_ingest")
-    telemetry = run_component("Telemetry Ingest", ["python", "-m", "drone_core.workers.telemetry_ingest"])
+    telemetry = run_component("Telemetry Ingest", ["python", "-m", "drone_core.workers.telemetry_ingest"], cwd="src")
 
     print("▶️  Orchestrator: python -m drone_core.workers.orchestrator")
-    orchestrator = run_component("Orchestrator", ["python", "-m", "drone_core.workers.orchestrator"])
+    orchestrator = run_component("Orchestrator", ["python", "-m", "drone_core.workers.orchestrator"], cwd="src")
 
     print("▶️  Web UI: uvicorn web_ui.main:app --port 8000")
-    web_ui = run_component("Web UI", ["uvicorn", "web_ui.main:app", "--port", "8000"])
+    web_ui = run_component(
+        "Web UI",
+        ["uvicorn", "web_ui.main:app", "--port", "8000", "--reload", "--log-level", "debug"],
+        cwd="src"
+    )
 
     print("\n🚀 Все компоненты запущены!")
     print("Открой UI → http://127.0.0.1:8000/static/index.html")

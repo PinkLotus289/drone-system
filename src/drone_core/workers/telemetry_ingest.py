@@ -61,7 +61,10 @@ def main():
     bus.subscribe(TelemetryTopics.ALL, handle_message)
 
     # Запускаем MQTT-потоки
+    print(f"[DEBUG] MQTT URL = {settings.MQTT_URL}")
+    print("[DEBUG] Starting MqttBus...")
     bus.start()
+    print("[DEBUG] MqttBus started, waiting 3s...")
 
     # Держим процесс живым
     try:

@@ -74,14 +74,33 @@ class MqttBus(EventBus):
 
     # ---------- lifecycle ----------
     def start(self) -> None:
-        host = self._url.hostname or "localhost"
+        host = self._url.hostname or "127.0.0.1"
         port = self._url.port or (8883 if self._url.scheme in ("mqtts", "ssl", "tls") else 1883)
-        log.info(f"MQTT connecting to {host}:{port} ({self._url.scheme})")
-        self._client.connect_async(host, port, keepalive=self._keepalive)
-        self._async_thread.start()
-        self._mqtt_thread.start()
-        # дождаться коннекта (не обязательно, но удобно)
-        self._connected.wait(timeout=5)
+
+        print(f"[MQTT BUS] Connecting to {host}:{port} ...")
+
+        # отладочные логи
+        self._client.enable_logger()
+        self._client.on_log = lambda client, userdata, level, buf: print("[PAHO]", buf)
+
+        try:
+            # запускаем цикл в отдельном потоке (он должен жить ДО подключения)
+            self._client.loop_start()
+
+            # синхронное подключение — гарантированно дождётся коннекта
+            self._client.connect(host, port, keepalive=self._keepalive)
+
+            # ждём максимум 5 секунд для успешного соединения
+            if not self._connected.wait(timeout=5):
+                print(f"[MQTT BUS] ❌ Could not connect to MQTT broker {host}:{port}")
+            else:
+                print(f"[MQTT BUS] ✅ Connected to MQTT broker {host}:{port}")
+
+            # запускаем отдельный event loop для async-обработчиков
+            self._async_thread.start()
+
+        except Exception as e:
+            print(f"[MQTT BUS] 💥 Connection failed: {e}")
 
     def stop(self) -> None:
         try:

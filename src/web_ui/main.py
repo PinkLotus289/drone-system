@@ -95,35 +95,69 @@ async def ws(ws: WebSocket):
     await ws.accept()
     telemetry_clients.add(ws)
 
-    # локальный обработчик MQTT, вещает всем WS-клиентам
-    def _mqtt_handler(message):
-        data = {
-            "topic": message.topic,
-            "payload": message.payload if not isinstance(message.payload, bytes)
-                       else json.loads(message.payload.decode("utf-8")),
-        }
-        dead = []
-        for c in list(telemetry_clients):
-            try:
-                asyncio.run_coroutine_threadsafe(c.send_text(json.dumps(data)), asyncio.get_event_loop())
-            except Exception:
-                dead.append(c)
-        for d in dead:
-            try:
-                telemetry_clients.remove(d)
-            except Exception:
-                pass
+    @app.websocket("/ws")
+    async def ws(ws: WebSocket):
+        await ws.accept()
+        telemetry_clients.add(ws)
 
-    # подписки для UI
-    bus.subscribe("telem/+/+", _mqtt_handler, qos=0)
-    bus.subscribe("mission/+/planned", _mqtt_handler, qos=1)
-    bus.subscribe("mission/+/status", _mqtt_handler, qos=1)
-    bus.subscribe("mission/+/assigned", _mqtt_handler, qos=1)
+        # локальный обработчик MQTT, вещает всем WS-клиентам
+        def _mqtt_handler(message):
+            topic = message.topic
+            try:
+                if isinstance(message.payload, bytes):
+                    payload = json.loads(message.payload.decode("utf-8"))
+                elif isinstance(message.payload, str):
+                    payload = json.loads(message.payload) if message.payload.strip().startswith(
+                        "{") else message.payload
+                else:
+                    payload = message.payload
+            except Exception:
+                payload = {}
 
-    try:
-        while True:
-            await ws.receive_text()  # держим соединение
-    except WebSocketDisconnect:
-        pass
-    finally:
-        telemetry_clients.discard(ws)
+            # создаём сообщение для UI
+            data = {"topic": topic, "payload": payload}
+
+            # 1️⃣ fleet/active → отрисовать дрон
+            if topic == "fleet/active":
+                data["type"] = "drone_active"
+
+            # 2️⃣ telem/+/+ → обновление телеметрии
+            elif topic.startswith("telem/"):
+                data["type"] = "telemetry_update"
+
+            # 3️⃣ mission/+/planned → маршрут
+            elif topic.endswith("/planned"):
+                data["type"] = "mission_planned"
+
+            # 4️⃣ mission/+/status → статус миссии
+            elif topic.endswith("/status"):
+                data["type"] = "mission_status"
+
+            # 5️⃣ mission/+/assigned → назначение дрона
+            elif topic.endswith("/assigned"):
+                data["type"] = "mission_assigned"
+
+            # вещаем всем активным WS
+            dead = []
+            for c in list(telemetry_clients):
+                try:
+                    asyncio.run_coroutine_threadsafe(c.send_text(json.dumps(data)), asyncio.get_event_loop())
+                except Exception:
+                    dead.append(c)
+            for d in dead:
+                telemetry_clients.discard(d)
+
+        # подписки для UI
+        bus.subscribe("fleet/active", _mqtt_handler, qos=1)
+        bus.subscribe("telem/+/+", _mqtt_handler, qos=0)
+        bus.subscribe("mission/+/planned", _mqtt_handler, qos=1)
+        bus.subscribe("mission/+/status", _mqtt_handler, qos=1)
+        bus.subscribe("mission/+/assigned", _mqtt_handler, qos=1)
+
+        try:
+            while True:
+                await ws.receive_text()  # держим соединение
+        except WebSocketDisconnect:
+            pass
+        finally:
+            telemetry_clients.discard(ws)

@@ -25,7 +25,7 @@ async def wait_for_px4_ready(proc, instance):
 
 def make_env(drone):
     env = os.environ.copy()
-    env["PX4_SIM_MODEL"] = "none"
+    env["PX4_SIM_MODEL"] = "sihsim_quadx"
     env["PX4_HOME_LAT"] = "43.0747"
     env["PX4_HOME_LON"] = "-89.3842"
     env["PX4_HOME_ALT"] = "270"
