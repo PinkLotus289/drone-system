@@ -9,6 +9,8 @@ from typing import Any, Dict, Optional, Callable, Awaitable, Union, List
 from urllib.parse import urlparse
 
 import paho.mqtt.client as mqtt
+logging.getLogger("paho").setLevel(logging.WARNING)
+logging.getLogger("paho.mqtt.client").setLevel(logging.WARNING)
 
 from .bus import EventBus, Message, Handler
 
@@ -80,8 +82,8 @@ class MqttBus(EventBus):
         print(f"[MQTT BUS] Connecting to {host}:{port} ...")
 
         # отладочные логи
-        self._client.enable_logger()
-        self._client.on_log = lambda client, userdata, level, buf: print("[PAHO]", buf)
+        #self._client.enable_logger()
+        #self._client.on_log = lambda client, userdata, level, buf: print("[PAHO]", buf)
 
         try:
             # запускаем цикл в отдельном потоке (он должен жить ДО подключения)

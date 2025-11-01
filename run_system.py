@@ -142,7 +142,7 @@ async def start_all():
     print("▶️  Web UI: uvicorn web_ui.main:app --port 8000")
     web_ui = run_component(
         "Web UI",
-        ["uvicorn", "web_ui.main:app", "--port", "8000", "--reload", "--log-level", "debug"],
+        ["uvicorn", "web_ui.main:app", "--port", "8000", "--reload", "--log-level", "info"],
         cwd="src"
     )
 

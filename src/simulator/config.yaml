@@ -2,6 +2,10 @@ mqtt:
   host: "localhost"
   port: 1883
 
+base:
+  lat: 43.07470
+  lon: -89.38420
+
 simulator:
   num_drones: 2
   model: "none"

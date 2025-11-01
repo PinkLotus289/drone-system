@@ -45,7 +45,7 @@ def handle_message(msg: Message):
         d = LAST_TELEM.setdefault(veh_id, {})
         d[telem_type] = payload
 
-        logger.info(f"<< {telem_type} {veh_id}: {payload}")
+        #logger.info(f"<< {telem_type} {veh_id}: {payload}")
 
     except Exception as e:
         logger.exception(f"Ошибка обработки телеметрии: {e}")

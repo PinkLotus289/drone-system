@@ -28,6 +28,7 @@ class Orchestrator:
         self.fleet, self.missions = make_repos()
         self.bus = MqttBus(self.settings.MQTT_URL)
         self._started = False
+        self.loop = asyncio.get_event_loop()
 
     # ---- выбор борта ----
     async def _select_vehicle(self) -> Optional[str]:
@@ -38,11 +39,15 @@ class Orchestrator:
 
     # ---- обработчик заказа ----
     async def _on_order_new(self, msg_payload: dict) -> None:
-        order = Order(**msg_payload)
+        log.info(f"📦 Получен новый заказ: {msg_payload}")
+        try:
+            order = Order(**msg_payload)
+        except Exception as e:
+            log.error(f"Ошибка парсинга заказа: {e}")
+            return
+
         mission = plan_order(order)
         mission = await self.missions.create(mission)
-
-        # уведомим о планировании
         await self._publish(f"mission/{mission.id}/planned", mission.dict())
 
         veh_id = await self._select_vehicle()
@@ -52,25 +57,23 @@ class Orchestrator:
 
         await self.missions.assign_vehicle(mission.id, veh_id)
         await self.missions.set_status(mission.id, MissionStatus.ASSIGNED)
-
         await self._publish(f"mission/{mission.id}/assigned",
                             {"mission_id": mission.id, "vehicle_id": veh_id})
 
-        # выгрузим маршрут в борт
+        # Загрузка маршрута
         await self._publish(topics.cmd(veh_id, "mission.upload"), {
             "mission_id": mission.id,
             "waypoints": [w.dict() for w in mission.waypoints],
         })
 
-        # (MVP) мини-пауза вместо подтверждения
         await asyncio.sleep(1.0)
         await self.missions.set_status(mission.id, MissionStatus.UPLOADED)
         await self._publish(f"mission/{mission.id}/status",
                             {"mission_id": mission.id, "status": MissionStatus.UPLOADED})
 
-        # взлёт
+        # Взлёт
         await self._publish(topics.cmd(veh_id, "arm"), {"mission_id": mission.id})
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)
         await self._publish(topics.cmd(veh_id, "takeoff"),
                             {"mission_id": mission.id, "alt": mission.waypoints[0].pos.alt})
 
@@ -78,7 +81,6 @@ class Orchestrator:
         await self._publish(f"mission/{mission.id}/status",
                             {"mission_id": mission.id, "status": MissionStatus.IN_PROGRESS})
 
-        # NAV точки
         for wp in mission.waypoints:
             if wp.kind == "NAV":
                 await self._publish(topics.cmd(veh_id, "goto"), {
@@ -87,7 +89,6 @@ class Orchestrator:
                 })
                 await asyncio.sleep(max(wp.hold_s, 1.0))
 
-        # посадка
         await self._publish(topics.cmd(veh_id, "land"), {"mission_id": mission.id})
         await asyncio.sleep(2.0)
 
@@ -95,8 +96,9 @@ class Orchestrator:
         await self._publish(f"mission/{mission.id}/status",
                             {"mission_id": mission.id, "status": MissionStatus.COMPLETED})
 
+        log.info(f"✅ Миссия {mission.id} завершена")
+
     async def _publish(self, topic: str, payload: dict) -> None:
-        # MqttBus.publish синхронный — завернём в default loop
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self.bus.publish, topic, payload, 1, False)
 
@@ -104,8 +106,10 @@ class Orchestrator:
     def start(self) -> None:
         if self._started:
             return
+
         self.bus.start()
-        # подписка на заказы
+        log.info("🧭 Orchestrator запущен и слушает заказы...")
+
         def _handler(message):
             try:
                 payload = message.payload
@@ -113,9 +117,11 @@ class Orchestrator:
                     payload = json.loads(payload.decode("utf-8"))
                 elif isinstance(payload, str):
                     payload = json.loads(payload)
-                asyncio.run_coroutine_threadsafe(self._on_order_new(payload), asyncio.get_event_loop())
+                asyncio.run_coroutine_threadsafe(
+                    self._on_order_new(payload), self.loop
+                )
             except Exception as e:
-                log.exception("order/new handler error: %s", e)
+                log.exception("Ошибка в обработчике order/new: %s", e)
 
         self.bus.subscribe("orders/new", _handler, qos=1)
         self._started = True
@@ -123,7 +129,6 @@ class Orchestrator:
 
 async def main():
     orch = Orchestrator()
-    # отдельная петля под MqttBus уже крутится в его потоках; здесь просто ждём
     orch.start()
     try:
         while True:

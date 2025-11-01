@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <title>Drone System Dashboard</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+  <!-- ✅ Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+    crossorigin=""
+  />
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -20,7 +26,7 @@
   <!-- ========== Вкладка Orders ========== -->
   <section id="orders" class="tab active">
     <div id="orders-panel">
-      <h2>Создать заказ</h2>
+      <h2>Создать заказ </h2>
       <form id="orderForm">
         <label>Пункт A (забрать):</label><br>
         <input id="from-lat" placeholder="lat" type="number" step="0.000001">
@@ -42,6 +48,7 @@
       <h3>Активные заказы</h3>
       <ul id="orders-list"></ul>
     </div>
+
     <div id="map"></div>
   </section>
 
@@ -91,7 +98,150 @@
   </section>
 </main>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="/static/app.js"></script>
+<!-- ✅ Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js" crossorigin=""></script>
+
+<!-- ✅ Основная логика -->
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const map = L.map('map').setView([43.0747, -89.3842], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const droneMarkers = {};
+  let pickupMarker = null;
+  let dropoffMarker = null;
+
+  // === WebSocket ===
+  const socket = new WebSocket(`ws://${window.location.host}/ws`);
+
+  socket.onopen = () => console.log("✅ WebSocket подключен");
+  socket.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+
+    if (msg.type === "telemetry_update" && msg.payload) {
+      const id = msg.topic.split("/")[1];
+      const { lat, lon } = msg.payload;
+      if (!lat || !lon) return;
+
+      if (!droneMarkers[id]) {
+        const marker = L.marker([lat, lon]).addTo(map)
+          .bindPopup(`🚁 Drone ${id}`);
+        droneMarkers[id] = marker;
+      } else {
+        droneMarkers[id].setLatLng([lat, lon]);
+      }
+    }
+
+    if (msg.type === "mission_planned" && msg.payload?.waypoints) {
+      const id = msg.topic.split("/")[1];
+      const coords = msg.payload.waypoints.map(w => [w.lat, w.lon]);
+      const polyline = L.polyline(coords, { color: 'blue', weight: 2 }).addTo(map);
+      polyline.bindPopup(`📦 Маршрут дрона ${id}`);
+    }
+  };
+
+  // === Клик по карте для создания заказов ===
+  map.on('click', (e) => {
+    const { lat, lng } = e.latlng;
+
+    // Первая точка — пункт A (pickup)
+    if (!pickupMarker) {
+      pickupMarker = L.marker([lat, lng], { draggable: true, icon: greenIcon() })
+        .addTo(map)
+        .bindPopup("Пункт A (забрать)")
+        .openPopup();
+
+      document.getElementById("from-lat").value = lat.toFixed(6);
+      document.getElementById("from-lon").value = lng.toFixed(6);
+    }
+
+    // Вторая точка — пункт B (dropoff)
+    else if (!dropoffMarker) {
+      dropoffMarker = L.marker([lat, lng], { draggable: true, icon: redIcon() })
+        .addTo(map)
+        .bindPopup("Пункт B (доставить)")
+        .openPopup();
+
+      document.getElementById("to-lat").value = lat.toFixed(6);
+      document.getElementById("to-lon").value = lng.toFixed(6);
+
+      // Автоматически создаём заказ
+      createOrder();
+    }
+
+    // Если обе точки уже есть — сбрасываем
+    else {
+      map.removeLayer(pickupMarker);
+      map.removeLayer(dropoffMarker);
+      pickupMarker = null;
+      dropoffMarker = null;
+    }
+  });
+
+  // === Отправка заказа ===
+  async function createOrder() {
+    const fromLat = parseFloat(document.getElementById("from-lat").value);
+    const fromLon = parseFloat(document.getElementById("from-lon").value);
+    const toLat = parseFloat(document.getElementById("to-lat").value);
+    const toLon = parseFloat(document.getElementById("to-lon").value);
+    const weight = parseFloat(document.getElementById("orderWeight").value || 1);
+
+    const body = {
+      pickup: { lat: fromLat, lon: fromLon },
+      dropoff: { lat: toLat, lon: toLon },
+      weight: weight,
+      drone_id: 0
+    };
+
+    const res = await fetch("/api/start_mission", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      alert(`✅ Заказ создан! Миссия ${data.mission_id}`);
+    } else {
+      alert("❌ Ошибка создания заказа");
+    }
+  }
+
+  // === Цветные иконки ===
+  function greenIcon() {
+    return new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+  }
+
+  function redIcon() {
+    return new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+  }
+
+  // Центровка карты по дронам
+  setInterval(() => {
+    const markers = Object.values(droneMarkers);
+    if (markers.length > 0) {
+      const group = new L.featureGroup(markers);
+      map.fitBounds(group.getBounds().pad(0.3));
+    }
+  }, 3000);
+});
+</script>
 </body>
 </html>
