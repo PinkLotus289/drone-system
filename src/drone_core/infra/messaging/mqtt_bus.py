@@ -87,10 +87,10 @@ class MqttBus(EventBus):
 
         try:
             # запускаем цикл в отдельном потоке (он должен жить ДО подключения)
-            self._client.loop_start()
+            self._client.connect(host, port, keepalive=self._keepalive)
 
             # синхронное подключение — гарантированно дождётся коннекта
-            self._client.connect(host, port, keepalive=self._keepalive)
+            self._client.loop_start()
 
             # ждём максимум 5 секунд для успешного соединения
             if not self._connected.wait(timeout=5):
@@ -171,8 +171,13 @@ class MqttBus(EventBus):
 
     def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties):
         self._connected.clear()
-        if not self._stop_evt.is_set():
-            log.warning(f"MQTT disconnected reason_code={reason_code}; paho will reconnect")
+        # подавляем типичные "ложные" отключения
+        if self._stop_evt.is_set():
+            return
+        if reason_code in (0x80, 0, mqtt.MQTT_ERR_SUCCESS):
+            # 0x80 — Unspecified error при reload uvicorn или reconnect
+            return
+        log.warning(f"[MQTT] Disconnected rc={reason_code}; reconnecting...")
 
     def _on_message(self, client: mqtt.Client, userdata, msg: mqtt.MQTTMessage) -> None:
         # попытка распарсить JSON

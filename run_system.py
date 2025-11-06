@@ -119,6 +119,7 @@ async def start_all():
     for d in cfg["drones"]:
         port = d["mavlink_out"]
         tasks.append(connect_to_px4(d["id"], port, timeout=120))
+        time.sleep(1.0)
 
     # ждём, пока все дроны подключатся
     drones = await asyncio.gather(*tasks)
@@ -131,18 +132,21 @@ async def start_all():
         ["python", "-m", "simulator.mavsdk_bridge"],
         cwd="src"
     )
+    time.sleep(0.4)
 
     # 3️⃣ Теперь можно запускать остальные сервисы
     print("▶️  Telemetry Ingest: python -m drone_core.workers.telemetry_ingest")
     telemetry = run_component("Telemetry Ingest", ["python", "-m", "drone_core.workers.telemetry_ingest"], cwd="src")
+    time.sleep(0.4)
 
     print("▶️  Orchestrator: python -m drone_core.workers.orchestrator")
     orchestrator = run_component("Orchestrator", ["python", "-m", "drone_core.workers.orchestrator"], cwd="src")
+    time.sleep(0.4)
 
     print("▶️  Web UI: uvicorn web_ui.main:app --port 8000")
     web_ui = run_component(
         "Web UI",
-        ["uvicorn", "web_ui.main:app", "--port", "8000", "--reload", "--log-level", "info"],
+        ["uvicorn", "web_ui.main:app", "--port", "8000", "--log-level", "info"],
         cwd="src"
     )
 

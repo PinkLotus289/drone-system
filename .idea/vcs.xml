@@ -3,14 +3,45 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/flightgear/flightgear_bridge" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/flightgear/flightgear_bridge/models/Rascal" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/flightgear/flightgear_bridge/models/TF-G1" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/flightgear/flightgear_bridge/models/TF-G2" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/flightgear/flightgear_bridge/models/TF-R1" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/external/OpticalFlow" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/external/OpticalFlow/external/klt_feature_tracker" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/gz" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/jmavsim/jMAVSim" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/jmavsim/jMAVSim/jMAVlib" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/jsbsim/jsbsim_bridge" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/jsbsim/jsbsim_bridge/models/ATI-Resolution" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/Tools/simulation/jsbsim/jsbsim_bridge/models/Rascal" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/boards/modalai/voxl2/libfc-sensor-api" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/build/px4_sitl_default/src/modules/uxrce_dds_client/src/libmicroxrceddsclient_project-build/microcdr/src/microcdr" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/platforms/nuttx/NuttX/apps" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/platforms/nuttx/NuttX/nuttx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/actuators/vertiq_io/iq-module-communication-cpp" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/cyphal/legacy_data_types" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/cyphal/libcanard" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/cyphal/public_regulated_data_types" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/gps/devices" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/ins/microstrain/mip_sdk" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/ins/sbgecom/sbgECom" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/uavcan/libdronecan/dsdl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/drivers/uavcan/libdronecan/libuavcan/dsdl_compiler/pydronecan" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/cdrstream/cyclonedds" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/cdrstream/rosidl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/crypto/libtomcrypt" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/crypto/libtommath" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/crypto/monocypher" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/events/libevents" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/heatshrink/heatshrink" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/lib/tensorflow_lite_micro/tflite_micro" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/modules/mavlink/mavlink" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/modules/mavlink/mavlink/pymavlink" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/modules/uxrce_dds_client/Micro-XRCE-DDS-Client" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/src/modules/zenoh/zenoh-pico" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/PX4-Autopilot/test/fuzztest" vcs="Git" />
   </component>
 </project>
