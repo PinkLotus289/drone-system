@@ -118,20 +118,40 @@ class MqttBus(EventBus):
 
     # ---------- pub/sub API ----------
     def publish(self, topic: str, payload: Any, qos: int = 1, retain: bool = False) -> None:
-        if isinstance(payload, (dict, list)) or _is_jsonable(payload):
-            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        import json
+        from datetime import datetime
+
+        # безопасный сериализатор для datetime и Pydantic-моделей
+        def default(o):
+            if isinstance(o, datetime):
+                return o.isoformat()
+            try:
+                # если это Pydantic модель — используем встроенный сериализатор
+                if hasattr(o, "model_dump"):
+                    return o.model_dump()
+                elif hasattr(o, "dict"):
+                    return o.dict()
+            except Exception:
+                pass
+            return str(o)
+
+        if isinstance(payload, (dict, list)):
+            try:
+                body = json.dumps(payload, ensure_ascii=False, default=default).encode("utf-8")
+            except Exception as e:
+                print(f"[MQTT BUS] ❌ Ошибка сериализации JSON: {e}")
+                body = str(payload).encode("utf-8")
         elif isinstance(payload, str):
             body = payload.encode("utf-8")
         elif isinstance(payload, (bytes, bytearray)):
             body = payload
         else:
-            # последний шанс — строковое представление
             body = str(payload).encode("utf-8")
 
         if not self._connected.is_set():
             log.warning("publish while disconnected; message will still be queued by paho")
+
         res = self._client.publish(topic, body, qos=qos, retain=retain)
-        # paho возвращает MQTTMessageInfo, можно проверить rc
         if res.rc != mqtt.MQTT_ERR_SUCCESS:
             log.error(f"publish error rc={res.rc} topic={topic}")
 

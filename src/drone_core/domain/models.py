@@ -4,6 +4,8 @@ from typing import Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
 from uuid import uuid4
+from pydantic import BaseModel, ConfigDict
+from typing import List, Optional
 
 
 # ---------- Vehicles ----------
@@ -70,6 +72,11 @@ class Mission(BaseModel):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+    model_config = ConfigDict(
+        ser_json_timedelta="iso8601",
+        ser_json_datetime="iso8601"
+    )
+
 
 class Order(BaseModel):
     """
@@ -81,3 +88,8 @@ class Order(BaseModel):
     addr2: LLA
     payload_kg: float = 2.0
     priority: Literal["low", "normal", "high"] = "normal"
+
+    model_config = ConfigDict(
+        ser_json_timedelta="iso8601",
+        ser_json_datetime="iso8601"
+    )
