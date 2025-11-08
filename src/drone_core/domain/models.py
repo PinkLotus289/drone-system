@@ -12,6 +12,7 @@ from typing import List, Optional
 class VehicleStatus(str, Enum):
     IDLE = "IDLE"
     BUSY = "BUSY"
+    FLYING = "FLYING"
     OFFLINE = "OFFLINE"
     ERROR = "ERROR"
 
