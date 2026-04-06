@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Dict, Optional
 
 from drone_core.config.settings import Settings
 from drone_core.infra.repositories import make_repos
@@ -20,7 +20,7 @@ class Orchestrator:
     - слушает orders/new
     - планирует миссию (base -> addr1 -> addr2 -> base)
     - выбирает свободный борт по SoC/статусу
-    - шлёт команды: mission.upload -> arm -> takeoff -> goto... -> land
+    - шлёт команды: mission.upload -> arm -> mission.start
     """
 
     def __init__(self) -> None:
@@ -29,6 +29,7 @@ class Orchestrator:
         self.bus = MqttBus(self.settings.MQTT_URL)
         self._started = False
         self.loop = asyncio.get_event_loop()
+        self._upload_waiters: Dict[str, asyncio.Future[str]] = {}
 
     # ---- выбор борта ----
     async def _select_vehicle(self) -> Optional[str]:
@@ -39,14 +40,24 @@ class Orchestrator:
 
     # ---- обработчик заказа ----
     async def _on_order_new(self, msg_payload: dict) -> None:
-        print("🟢 [ORCH] Получен заказ через MQTT")
-        log.info(f"📦 Получен новый заказ: {msg_payload}")
+        print("🟢 [ORCH][ORDER] Получен заказ через MQTT")
+        log.info(f"[ORCH][ORDER] 📦 Получен новый заказ: {msg_payload}")
+        flow_state = "idle"
+
+        def _set_flow_state(new_state: str, reason: str = "") -> None:
+            nonlocal flow_state
+            if flow_state == new_state:
+                return
+            suffix = f" ({reason})" if reason else ""
+            print(f"🟣 [ORCH][STATE] {flow_state} -> {new_state}{suffix}")
+            flow_state = new_state
 
         try:
             order = Order(**msg_payload)
             print(f"🟢 [ORCH] ✅ Order создан: {order.id}")
         except Exception as e:
-            print(f"🔴 [ORCH] Ошибка парсинга заказа: {e}")
+            print(f"🔴 [ORCH][ORDER] Ошибка парсинга заказа: {e}")
+            _set_flow_state("error", reason="invalid order payload")
             return
 
         # === Этап 1: Планирование ===
@@ -63,8 +74,10 @@ class Orchestrator:
         veh_id = await self._select_vehicle()
         if not veh_id:
             print("🔴 [ORCH] ❌ Нет свободных дронов — миссия остаётся PLANNED")
+            _set_flow_state("error", reason="no available vehicle")
             return
-        print(f"🟢 [ORCH] 🚁 Назначен дрон: veh_{veh_id}")
+        vehicle_id = veh_id if str(veh_id).startswith("veh_") else f"veh_{veh_id}"
+        print(f"🟢 [ORCH] 🚁 Назначен дрон: {vehicle_id}")
 
         await self.missions.assign_vehicle(mission.id, veh_id)
         await self.missions.set_status(mission.id, MissionStatus.ASSIGNED)
@@ -72,52 +85,69 @@ class Orchestrator:
         print("🟢 [ORCH] MQTT → mission/assigned отправлена")
 
         # === Этап 3: Загрузка маршрута ===
+        upload_waiter = asyncio.get_running_loop().create_future()
+        self._upload_waiters[mission.id] = upload_waiter
         route_payload = {
             "mission_id": mission.id,
             "waypoints": [w.model_dump() for w in mission.waypoints],
         }
-        await self._publish(topics.cmd(veh_id, "mission.upload"), route_payload)
-        print(f"🟢 [ORCH] MQTT → cmd/veh_{veh_id}/mission.upload отправлена: {len(mission.waypoints)} точек")
+        await self._publish(topics.cmd(vehicle_id, "mission.upload"), route_payload)
+        print(f"🟣 [ORCH] [MISSION] upload begin mission_id={mission.id}")
+        print(f"🟢 [ORCH] MQTT → cmd/{vehicle_id}/mission.upload отправлена: {len(mission.waypoints)} точек")
 
-        await asyncio.sleep(1.0)
+        print(f"🟡 [ORCH] Ожидаю подтверждение загрузки от bridge: mission/{mission.id}/status")
+        try:
+            upload_status = await asyncio.wait_for(upload_waiter, timeout=30.0)
+        except asyncio.TimeoutError:
+            if mission.id in self._upload_waiters:
+                del self._upload_waiters[mission.id]
+            await self.missions.set_status(mission.id, MissionStatus.ABORTED)
+            await self._publish(
+                f"mission/{mission.id}/status",
+                {"mission_id": mission.id, "status": MissionStatus.ABORTED, "reason": "upload confirmation timeout"},
+            )
+            print(f"🔴 [ORCH] ⏱️ Таймаут ожидания UPLOADED для mission_id={mission.id}")
+            print(f"🔴 [ORCH] [MISSION] upload result=UPLOAD_FAILED mission_id={mission.id} reason=timeout")
+            _set_flow_state("error", reason="upload confirmation timeout")
+            return
+        finally:
+            if mission.id in self._upload_waiters:
+                del self._upload_waiters[mission.id]
+
+        if upload_status != "UPLOADED":
+            await self.missions.set_status(mission.id, MissionStatus.ABORTED)
+            await self._publish(
+                f"mission/{mission.id}/status",
+                {"mission_id": mission.id, "status": MissionStatus.ABORTED, "reason": f"upload status={upload_status}"},
+            )
+            print(f"🔴 [ORCH] ❌ Загрузка миссии не подтверждена bridge: mission_id={mission.id}, status={upload_status}")
+            print(f"🔴 [ORCH] [MISSION] upload result={upload_status} mission_id={mission.id}")
+            _set_flow_state("error", reason=f"upload status={upload_status}")
+            return
+
         await self.missions.set_status(mission.id, MissionStatus.UPLOADED)
-        await self._publish(f"mission/{mission.id}/status",
-                            {"mission_id": mission.id, "status": MissionStatus.UPLOADED})
-        print("🟢 [ORCH] MQTT → mission/status: UPLOADED")
+        print(f"🟢 [ORCH] [MISSION] upload result=UPLOADED mission_id={mission.id}")
+        _set_flow_state("mission_uploaded")
+        print(f"🟢 [ORCH] Подтверждён upload от bridge: mission_id={mission.id}, status=UPLOADED")
 
-        # === Этап 4: Взлёт ===
-        await self._publish(topics.cmd(veh_id, "arm"), {"mission_id": mission.id})
-        print(f"🟢 [ORCH] MQTT → cmd/veh_{veh_id}/arm отправлена")
+        # === Этап 4: Старт миссии через PX4 mission flow ===
+        print(f"🟡 [ORCH] Запускаю нативный поток PX4: arm -> mission.start (mission_id={mission.id})")
+        _set_flow_state("arming")
+        await self._publish(topics.cmd(vehicle_id, "arm"), {"mission_id": mission.id})
+        print(f"🟢 [ORCH] MQTT → cmd/{vehicle_id}/arm отправлена")
+        _set_flow_state("armed")
 
         await asyncio.sleep(0.5)
-        await self._publish(topics.cmd(veh_id, "takeoff"),
-                            {"mission_id": mission.id, "alt": mission.waypoints[0].pos.alt})
-        print(f"🟢 [ORCH] MQTT → cmd/veh_{veh_id}/takeoff alt={mission.waypoints[0].pos.alt}")
+        print(f"🟣 [ORCH] [MISSION] start begin mission_id={mission.id}")
+        await self._publish(topics.cmd(vehicle_id, "mission.start"), {"mission_id": mission.id})
+        print(f"🟢 [ORCH] MQTT → cmd/{vehicle_id}/mission.start отправлена")
+        print(f"🟢 [ORCH] [MISSION] start result=STARTED mission_id={mission.id}")
+        _set_flow_state("mission_running")
 
         await self.missions.set_status(mission.id, MissionStatus.IN_PROGRESS)
         await self._publish(f"mission/{mission.id}/status",
                             {"mission_id": mission.id, "status": MissionStatus.IN_PROGRESS})
-        print("🟢 [ORCH] Статус миссии: IN_PROGRESS")
-
-        # === Этап 5: Полёт по точкам ===
-        for wp in mission.waypoints:
-            if wp.kind == "NAV":
-                await self._publish(topics.cmd(veh_id, "goto"), {
-                    "mission_id": mission.id,
-                    "lat": wp.pos.lat, "lon": wp.pos.lon, "alt": wp.pos.alt
-                })
-                print(f"🟢 [ORCH] MQTT → cmd/veh_{veh_id}/goto → ({wp.pos.lat:.6f}, {wp.pos.lon:.6f}, alt={wp.pos.alt})")
-                await asyncio.sleep(max(wp.hold_s, 1.0))
-
-        # === Этап 6: Завершение миссии ===
-        await self._publish(topics.cmd(veh_id, "land"), {"mission_id": mission.id})
-        print(f"🟢 [ORCH] MQTT → cmd/veh_{veh_id}/land отправлена")
-
-        await asyncio.sleep(2.0)
-        await self.missions.set_status(mission.id, MissionStatus.COMPLETED)
-        await self._publish(f"mission/{mission.id}/status",
-                            {"mission_id": mission.id, "status": MissionStatus.COMPLETED})
-        print(f"🟢 [ORCH] ✅ Миссия {mission.id} завершена")
+        print(f"🟢 [ORCH] Статус миссии: IN_PROGRESS (управление маршрутом передано PX4, mission_id={mission.id})")
 
     async def _publish(self, topic: str, payload: dict) -> None:
         print(f"   [DEBUG PUBLISH] Топик={topic}")
@@ -139,22 +169,58 @@ class Orchestrator:
         # === Подписка на новые заказы ===
         def _handler(message):
             try:
+                if message.topic != "orders/new":
+                    return
                 payload = message.payload
                 if isinstance(payload, (bytes, bytearray)):
                     payload = json.loads(payload.decode("utf-8"))
                 elif isinstance(payload, str):
                     payload = json.loads(payload)
+                elif not isinstance(payload, dict):
+                    log.warning("[ORCH][ORDER] Пропуск non-dict payload в orders/new: topic=%s", message.topic)
+                    return
                 asyncio.run_coroutine_threadsafe(
                     self._on_order_new(payload), self.loop
                 )
             except Exception as e:
-                log.exception("Ошибка в обработчике order/new: %s", e)
+                log.exception("[ORCH][ORDER] Ошибка в обработчике orders/new: %s", e)
 
         self.bus.subscribe("orders/new", _handler, qos=1)
+
+        # === Подписка на подтверждения mission upload от bridge ===
+        def _mission_status_handler(message):
+            try:
+                if not (message.topic.startswith("mission/") and message.topic.endswith("/status")):
+                    return
+                payload = message.payload
+                if isinstance(payload, (bytes, bytearray)):
+                    payload = json.loads(payload.decode("utf-8"))
+                elif isinstance(payload, str):
+                    payload = json.loads(payload)
+                elif not isinstance(payload, dict):
+                    return
+
+                mission_id = str(payload.get("mission_id") or "")
+                status = str(payload.get("status") or "")
+                if not mission_id or status not in ("UPLOADED", "UPLOAD_FAILED"):
+                    return
+
+                print(f"🟣 [ORCH][MISSION] upload result={status} mission_id={mission_id}")
+
+                waiter = self._upload_waiters.get(mission_id)
+                if waiter and not waiter.done():
+                    self.loop.call_soon_threadsafe(waiter.set_result, status)
+                    print(f"🟡 [ORCH][MISSION] Получен upload status от bridge: mission_id={mission_id}, status={status}")
+            except Exception as e:
+                log.error(f"[ORCH][MISSION] Ошибка обработки mission status: {e}")
+
+        self.bus.subscribe("mission/+/status", _mission_status_handler, qos=1)
 
         # === 🔥 ДОБАВЬ ЭТО: Подписка на fleet/active ===
         def _fleet_handler(message):
             try:
+                if message.topic != "fleet/active":
+                    return
                 payload = message.payload
                 if isinstance(payload, (bytes, bytearray)):
                     payload = json.loads(payload.decode("utf-8"))
@@ -168,10 +234,21 @@ class Orchestrator:
                     return
 
                 from drone_core.domain.models import LLA, Vehicle, VehicleStatus
+                raw_status = str(payload.get("status", "IDLE"))
+                try:
+                    vehicle_status = VehicleStatus(raw_status)
+                except ValueError:
+                    log.warning(
+                        "[ORCH][STATE] Пропуск fleet/active с невалидным VehicleStatus='%s' (id=%s)",
+                        raw_status,
+                        veh_id,
+                    )
+                    return
+
                 vehicle = Vehicle(
                     id=veh_id,
                     name=payload.get("name", veh_id),
-                    status=VehicleStatus(payload.get("status", "IDLE")),
+                    status=vehicle_status,
                     pos=LLA(
                         lat=float(payload.get("lat") or 0),
                         lon=float(payload.get("lon") or 0),
@@ -182,10 +259,10 @@ class Orchestrator:
 
                 # асинхронно добавляем в локальный FleetMem
                 asyncio.run_coroutine_threadsafe(self.fleet.add(vehicle), self.loop)
-                log.info(f"🛰️ [ORCH] Fleet обновлён: {vehicle.id} ({vehicle.status})")
+                log.info(f"🛰️ [ORCH][STATE] Fleet обновлён: {vehicle.id} ({vehicle.status})")
 
             except Exception as e:
-                log.error(f"[ORCH] Ошибка обработки fleet/active: {e}")
+                log.error(f"[ORCH][STATE] Ошибка обработки fleet/active: {e}")
 
         self.bus.subscribe("fleet/active", _fleet_handler, qos=1)
         # === 🔥 конец добавленного блока ===
