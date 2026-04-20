@@ -1,0 +1,21 @@
+services:
+  px4_sim:
+    image: px4io/px4-dev-simulation-focal:2024-05-18
+    container_name: px4_sim
+    privileged: true
+    environment:
+      - PX4_SIM_MODEL=iris
+      - HEADLESS=1
+      - DISPLAY
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    ports:
+      - "14550:14550/udp"
+    command: >
+      bash -c "
+        cd /root &&
+        git clone https://github.com/PX4/PX4-Autopilot.git --depth 1 --branch main &&
+        cd PX4-Autopilot &&
+        DONT_RUN=1 make px4_sitl_default &&
+        make px4_sitl gazebo-classic_iris
+      "

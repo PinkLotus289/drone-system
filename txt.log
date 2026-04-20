@@ -1,0 +1,129 @@
+
+🔌 Проверяем MQTT брокер...
+✅ MQTT брокер уже запущен на 127.0.0.1:1883
+[PX4] Проверяем сборку PX4 SITL...
+ninja: no work to do.
+[PX4] ✅ PX4 собран.
+🚁 Запуск PX4 instance 0 → UDP 14540 (слушает), → 14550 (шлёт heartbeat)
+🚁 Запуск PX4 instance 1 → UDP 14541 (слушает), → 14551 (шлёт heartbeat)
+[PX4-0] INFO  [px4] instance: 0
+[PX4-0]
+[PX4-0] ______  __   __    ___
+[PX4-0] | ___ \ \ \ / /   /   |
+[PX4-0] | |_/ /  \ V /   / /| |
+[PX4-0] |  __/   /   \  / /_| |
+[PX4-0] | |     / /^\ \ \___  |
+[PX4-0] \_|     \/   \/     |_/
+[PX4-0]
+[PX4-0] px4 starting.
+[PX4-0]
+[PX4-0] INFO  [px4] startup script: /bin/sh etc/init.d-posix/rcS 0
+[PX4-0] INFO  [init] found model autostart file as SYS_AUTOSTART=10040
+[PX4-0] INFO  [param] selected parameter default file parameters.bson
+[PX4-0] INFO  [param] importing from 'parameters.bson'
+[PX4-0] INFO  [parameters] BSON document size 420 bytes, decoded 420 bytes (INT32:14, FLOAT:7)
+[PX4-0] INFO  [param] selected parameter backup file parameters_backup.bson
+[PX4-0] INFO  [dataman] data manager file './dataman' size is 1208528 bytes
+[PX4-0] INFO  [init] SIH simulator
+[PX4-0] INFO  [simulator_sih] Simulation loop with 250 Hz (4000 us sim time interval)
+[PX4-0] INFO  [simulator_sih] Simulation with 1.0x speedup. Loop with (4000 us wall time interval)
+[PX4-0] INFO  [lockstep_scheduler] setting initial absolute time to 4000 us
+[PX4-0] INFO  [commander] LED: open /dev/led0 failed (22)
+[PX4-0] INFO  [uxrce_dds_client] init UDP agent IP:127.0.0.1, port:8888
+[PX4-0] INFO  [mavlink] mode: Normal, data rate: 4000000 B/s on udp port 18570 remote port 14550
+✅ PX4 instance 0 MAVLink активен!
+[PX4-1] INFO  [px4] instance: 1
+[PX4-1]
+[PX4-1] ______  __   __    ___
+[PX4-1] | ___ \ \ \ / /   /   |
+[PX4-1] | |_/ /  \ V /   / /| |
+[PX4-1] |  __/   /   \  / /_| |
+[PX4-1] | |     / /^\ \ \___  |
+[PX4-1] \_|     \/   \/     |_/
+[PX4-1]
+[PX4-1] px4 starting.
+[PX4-1]
+[PX4-1] INFO  [px4] startup script: /bin/sh etc/init.d-posix/rcS 1
+[PX4-1] INFO  [init] found model autostart file as SYS_AUTOSTART=10040
+[PX4-1] INFO  [param] selected parameter default file parameters.bson
+[PX4-1] INFO  [param] importing from 'parameters.bson'
+[PX4-1] INFO  [parameters] BSON document size 420 bytes, decoded 420 bytes (INT32:14, FLOAT:7)
+[PX4-1] INFO  [param] selected parameter backup file parameters_backup.bson
+[PX4-1] MAV_SYS_ID: curr: 1 -> new: 2
+[PX4-1] UXRCE_DDS_KEY: curr: 1 -> new: 2
+[PX4-1] INFO  [dataman] data manager file './dataman' size is 1208528 bytes
+[PX4-1] INFO  [init] SIH simulator
+[PX4-1] INFO  [simulator_sih] Simulation loop with 250 Hz (4000 us sim time interval)
+[PX4-1] INFO  [simulator_sih] Simulation with 1.0x speedup. Loop with (4000 us wall time interval)
+[PX4-1] INFO  [lockstep_scheduler] setting initial absolute time to 4000 us
+[PX4-1] INFO  [commander] LED: open /dev/led0 failed (22)
+[PX4-1] INFO  [uxrce_dds_client] init UDP agent IP:127.0.0.1, port:8888
+[PX4-1] INFO  [mavlink] mode: Normal, data rate: 4000000 B/s on udp port 18571 remote port 14550
+✅ PX4 instance 1 MAVLink активен!
+✅ Запущено 2 PX4-инстансов, все активны.
+
+🕹️  Подключаем MAVSDK ко всем PX4-дронам...
+[MAVSDK-0] ⏳ Подключаемся к PX4 через udp://:14550 (ожидание до 120 с)...
+[MAVSDK-1] ⏳ Подключаемся к PX4 через udp://:14551 (ожидание до 120 с)...
+[MAVSDK-0] ✅ Подключено к PX4!
+[MAVSDK-1] ✅ Подключено к PX4!
+✅ Все MAVSDK-соединения установлены!
+▶️  MAVSDK Bridge: python -m simulator.mavsdk_bridge
+▶️  MAVSDK Bridge: python -m simulator.mavsdk_bridge (cwd=src)
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1763158993.228533 7212323 fork_posix.cc:71] Other threads are currently calling into gRPC, skipping fork() handlers
+▶️  Telemetry Ingest: python -m drone_core.workers.telemetry_ingest
+▶️  Telemetry Ingest: python -m drone_core.workers.telemetry_ingest (cwd=src)
+[MQTT BUS] Connecting to 127.0.0.1:1883 ...
+2025-11-15 01:23:13,747 | INFO | mqtt-bus | MQTT connected
+[MQTT BUS] ✅ Connected to MQTT broker 127.0.0.1:1883
+2025-11-15 01:23:13,747 | INFO | mavsdk-bridge | 🔌 Подключаюсь к PX4 через udp://:14550 ...
+[MQTT BUS] Connecting to 127.0.0.1:1883 ...
+2025-11-15 01:23:13,755 | INFO | mqtt-bus | MQTT connected
+[MQTT BUS] ✅ Connected to MQTT broker 127.0.0.1:1883
+2025-11-15 01:23:13,756 | INFO | mavsdk-bridge | 🔌 Подключаюсь к PX4 через udp://:14551 ...
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1763158993.756385 7216175 fork_posix.cc:71] Other threads are currently calling into gRPC, skipping fork() handlers
+2025-11-15 01:23:13,764 | INFO | mavsdk-bridge | ✅ MAVSDK connected to udp://:14550
+2025-11-15 01:23:13,764 | INFO | mavsdk-bridge | ✅ MAVSDK connected to udp://:14551
+2025-11-15 01:23:13,773 | INFO | telemetry-ingest | Telemetry Ingest запускается...
+[DEBUG] MQTT URL = mqtt://127.0.0.1:1883
+[DEBUG] Starting MqttBus...
+[MQTT BUS] Connecting to 127.0.0.1:1883 ...
+2025-11-15 01:23:13,775 | INFO | mqtt-bus | MQTT connected
+[MQTT BUS] ✅ Connected to MQTT broker 127.0.0.1:1883
+[DEBUG] MqttBus started, waiting 3s...
+/Users/nikitaorekhva/PycharmProjects/drone-system/src/drone_core/workers/telemetry_ingest.py:153: DeprecationWarning: There is no current event loop
+  loop = asyncio.get_event_loop()
+▶️  Orchestrator: python -m drone_core.workers.orchestrator
+▶️  Orchestrator: python -m drone_core.workers.orchestrator (cwd=src)
+[MQTT BUS] Connecting to 127.0.0.1:1883 ...
+[MQTT BUS] ✅ Connected to MQTT broker 127.0.0.1:1883
+▶️  Web UI: uvicorn web_ui.main:app --port 8000
+▶️  Web UI: uvicorn web_ui.main:app --port 8000 --log-level info (cwd=src)
+
+🚀 Все компоненты запущены!
+Открой UI → http://127.0.0.1:8000/static/index.html
+INFO:     Started server process [22415]
+INFO:     Waiting for application startup.
+[UI] Starting MqttBus...
+[MQTT BUS] Connecting to 127.0.0.1:1883 ...
+[MQTT BUS] ✅ Connected to MQTT broker 127.0.0.1:1883
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2025-11-15 01:23:15,810 | INFO | mavsdk-bridge | [veh_0] 👋 Объявился во fleet/active
+2025-11-15 01:23:15,810 | INFO | mqtt-bus | subscribed: cmd/veh_0/# (qos=1)
+2025-11-15 01:23:15,810 | INFO | mavsdk-bridge | [veh_0] 🔔 Подписан на cmd/veh_0/#
+2025-11-15 01:23:15,811 | INFO | mavsdk-bridge | [veh_1] 👋 Объявился во fleet/active
+2025-11-15 01:23:15,811 | INFO | mqtt-bus | subscribed: cmd/veh_1/# (qos=1)
+2025-11-15 01:23:15,811 | INFO | mavsdk-bridge | [veh_1] 🔔 Подписан на cmd/veh_1/#
+2025-11-15 01:23:15,811 | INFO | telemetry-ingest | 📦 Получен fleet/active payload: {'id': 'veh_0', 'name': 'veh_0', 'status': 'IDLE', 'lat': 43.0747, 'lon': -89.3842, 'alt': 270.0, 'soc': 100.0}
+2025-11-15 01:23:15,813 | INFO | telemetry-ingest | 🟢 [INGEST] Добавлен новый дрон: veh_0 (IDLE)
+2025-11-15 01:23:15,815 | INFO | telemetry-ingest | 📦 Получен fleet/active payload: {'id': 'veh_1', 'name': 'veh_1', 'status': 'IDLE', 'lat': 43.0747, 'lon': -89.3842, 'alt': 270.0, 'soc': 100.0}
+2025-11-15 01:23:15,815 | INFO | telemetry-ingest | 🟢 [INGEST] Добавлен новый дрон: veh_1 (IDLE)
+2025-11-15 01:23:16,928 | INFO | telemetry-ingest | 📦 Получен fleet/active payload: {'id': 'veh_1', 'name': 'veh_1', 'status': 'IDLE', 'lat': 43.0746992, 'lon': -89.384202, 'alt': 0.02800000086426735, 'soc': 100.0}
+2025-11-15 01:23:16,929 | INFO | telemetry-ingest | 🟡 [INGEST] Обновлён дрон: veh_1 (IDLE)
+2025-11-15 01:23:16,930 | INFO | telemetry-ingest | 📦 Получен fleet/active payload: {'id': 'veh_0', 'name': 'veh_0', 'status': 'IDLE', 'lat': 43.0746992, 'lon': -89.384202, 'alt': 0.02800000086426735, 'soc': 100.0}
+2025-11-15 01:23:16,930 | INFO | telemetry-ingest | 🟡 [INGEST] Обновлён дрон: veh_0 (IDLE)
+2025-11-15 01:23:18,777 | INFO | telemetry-ingest | 🛰️ [MONITOR] Активные дроны в FleetMem: ['veh_0', 'veh_1']
+2025-11-15 01:23:28,779 | INFO | telemetry-ingest | 🛰️ [MONITOR] Активные дроны в FleetMem: ['veh_0', 'veh_1']
