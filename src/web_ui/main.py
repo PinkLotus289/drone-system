@@ -235,6 +235,12 @@ async def api_fleet():
     """Возвращает весь флот с актуальной телеметрией"""
     return {"fleet": list(app.state.active_drones.values())}
 
+@app.get("/api/system/mode")
+async def api_system_mode():
+    """Возвращает текущий режим системы (test / preflight / full)."""
+    return {"mode": settings.SYSTEM_MODE}
+
+
 @app.get("/api/free_drones")
 async def api_free_drones():
     """Возвращает только свободных дронов"""

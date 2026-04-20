@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -8,6 +10,7 @@ class Settings(BaseSettings):
     SLA_WAIT_PICKUP_SEC: int = 60
     SLA_WAIT_DROPOFF_SEC: int = 60
     REPO_IMPL: str = "mem"
+    SYSTEM_MODE: Literal["test", "preflight", "full"] = "test"
 
     class Config:
         env_file = ".env.dev"
