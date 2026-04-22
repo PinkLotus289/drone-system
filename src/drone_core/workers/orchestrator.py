@@ -30,11 +30,21 @@ class Orchestrator:
         self._started = False
         self.loop = asyncio.get_event_loop()
         self._upload_waiters: Dict[str, asyncio.Future[str]] = {}
+        # Борта, уже зарезервированные за активной миссией (fleet/active ещё не
+        # успевает обновить статус до FLYING между двумя подряд пришедшими заказами).
+        self._busy_vehicles: set[str] = set()
+        # mission_id -> vehicle_id для освобождения при COMPLETED/ABORTED.
+        self._mission_vehicle: Dict[str, str] = {}
 
     # ---- выбор борта ----
     async def _select_vehicle(self) -> Optional[str]:
         allv = await self.fleet.list_all()
-        free = [v for v in allv if v.status == VehicleStatus.IDLE and (v.soc or 100) > 40]
+        free = [
+            v for v in allv
+            if v.status == VehicleStatus.IDLE
+            and (v.soc or 100) > 40
+            and v.id not in self._busy_vehicles
+        ]
         free.sort(key=lambda v: (v.soc or 0), reverse=True)
         return free[0].id if free else None
 
@@ -77,7 +87,11 @@ class Orchestrator:
             _set_flow_state("error", reason="no available vehicle")
             return
         vehicle_id = veh_id if str(veh_id).startswith("veh_") else f"veh_{veh_id}"
-        print(f"🟢 [ORCH] 🚁 Назначен дрон: {vehicle_id}")
+        # Резервируем борт: fleet/active не успеет обновиться до FLYING
+        # до того как прилетит следующий заказ, а мы не должны назначить его снова.
+        self._busy_vehicles.add(veh_id)
+        self._mission_vehicle[mission.id] = veh_id
+        print(f"🟢 [ORCH] 🚁 Назначен дрон: {vehicle_id} (busy-lock acquired)")
 
         await self.missions.assign_vehicle(mission.id, veh_id)
         await self.missions.set_status(mission.id, MissionStatus.ASSIGNED)
@@ -187,7 +201,7 @@ class Orchestrator:
 
         self.bus.subscribe("orders/new", _handler, qos=1)
 
-        # === Подписка на подтверждения mission upload от bridge ===
+        # === Подписка на статусы миссии от bridge ===
         def _mission_status_handler(message):
             try:
                 if not (message.topic.startswith("mission/") and message.topic.endswith("/status")):
@@ -202,15 +216,41 @@ class Orchestrator:
 
                 mission_id = str(payload.get("mission_id") or "")
                 status = str(payload.get("status") or "")
-                if not mission_id or status not in ("UPLOADED", "UPLOAD_FAILED"):
+                if not mission_id or not status:
                     return
 
-                print(f"🟣 [ORCH][MISSION] upload result={status} mission_id={mission_id}")
+                # UPLOAD этап: разблокируем await-waiter.
+                if status in ("UPLOADED", "UPLOAD_FAILED"):
+                    print(f"🟣 [ORCH][MISSION] upload result={status} mission_id={mission_id}")
+                    waiter = self._upload_waiters.get(mission_id)
+                    if waiter and not waiter.done():
+                        self.loop.call_soon_threadsafe(waiter.set_result, status)
 
-                waiter = self._upload_waiters.get(mission_id)
-                if waiter and not waiter.done():
-                    self.loop.call_soon_threadsafe(waiter.set_result, status)
-                    print(f"🟡 [ORCH][MISSION] Получен upload status от bridge: mission_id={mission_id}, status={status}")
+                # COMPLETED: обновляем статус миссии, освобождаем борт.
+                elif status == "COMPLETED":
+                    print(f"🟢 [ORCH][MISSION] COMPLETED mission_id={mission_id}")
+                    asyncio.run_coroutine_threadsafe(
+                        self.missions.set_status(mission_id, MissionStatus.COMPLETED),
+                        self.loop,
+                    )
+                    veh = self._mission_vehicle.pop(mission_id, None)
+                    if veh:
+                        self._busy_vehicles.discard(veh)
+                        print(f"🟢 [ORCH][MISSION] vehicle {veh} released (busy-lock)")
+
+                # Fail-states: тоже освобождаем борт.
+                elif status in ("ABORTED", "UPLOAD_FAILED", "START_FAILED"):
+                    veh = self._mission_vehicle.pop(mission_id, None)
+                    if veh:
+                        self._busy_vehicles.discard(veh)
+                        print(f"🟡 [ORCH][MISSION] vehicle {veh} released after {status}")
+
+                # IN_PROGRESS / STARTED — нормальный ход, просто обновляем статус.
+                elif status == "STARTED":
+                    asyncio.run_coroutine_threadsafe(
+                        self.missions.set_status(mission_id, MissionStatus.IN_PROGRESS),
+                        self.loop,
+                    )
             except Exception as e:
                 log.error(f"[ORCH][MISSION] Ошибка обработки mission status: {e}")
 

@@ -70,3 +70,33 @@ th, td {
   border: 1px solid #ccc;
   text-align: left;
 }
+
+#missions-table { font-size: 12px; margin-top: 4px; }
+#missions-table th { background: #f4f4f4; }
+.m-status-PLANNED     { color: #777; }
+.m-status-ASSIGNED    { color: #0a7; }
+.m-status-UPLOADED    { color: #09a; }
+.m-status-STARTED,
+.m-status-IN_PROGRESS { color: #07c; font-weight: bold; }
+.m-status-COMPLETED   { color: #080; font-weight: bold; }
+.m-status-ABORTED,
+.m-status-START_FAILED,
+.m-status-UPLOAD_FAILED { color: #c00; }
+
+.progress-bar {
+  display: inline-block;
+  width: 80px;
+  height: 10px;
+  background: #eee;
+  border-radius: 3px;
+  vertical-align: middle;
+  position: relative;
+  overflow: hidden;
+  margin-right: 6px;
+}
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  background: #07c;
+  transition: width .3s;
+}

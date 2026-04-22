@@ -51,9 +51,12 @@ def ensure_mqtt():
 
 # === Подключение MAVSDK к PX4 ===
 async def connect_to_px4(drone_id: int, port: int, timeout: int = 120):
-    drone = System()
+    # Уникальный gRPC-порт для каждого инстанса: иначе два mavsdk_server
+    # пытаются занять 50051 и второй не стартует корректно (см. Multi-drone).
+    grpc_port = 50051 + drone_id
+    drone = System(port=grpc_port)
     addr = f"udp://:{port}"
-    print(f"[MAVSDK-{drone_id}] ⏳ Подключаемся к PX4 через {addr} (ожидание до {timeout} с)...")
+    print(f"[MAVSDK-{drone_id}] ⏳ Подключаемся к PX4 через {addr} (gRPC :{grpc_port}) ...")
     await drone.connect(system_address=addr)
 
     start = time.time()
@@ -68,16 +71,18 @@ async def connect_to_px4(drone_id: int, port: int, timeout: int = 120):
 
 
 # === Запуск подпроцессов ===
-def run_component(name: str, cmd: list[str], cwd: str | None = None):
+def run_component(name: str, cmd: list[str], cwd: str | None = None, env: dict | None = None):
     """Запускает компонент как подпроцесс с видимым логом"""
     print(f"▶️  {name}: {' '.join(cmd)} (cwd={cwd or os.getcwd()})")
-    #log_path = Path(f"{name.lower().replace(' ', '_')}.log")
+    run_env = os.environ.copy()
+    if env:
+        run_env.update(env)
     return subprocess.Popen(
         cmd,
         cwd=cwd,
-        #stdout=open(log_path, "w"),
         stderr=subprocess.STDOUT,
-        text=True
+        text=True,
+        env=run_env,
     )
 
 '''
@@ -113,26 +118,24 @@ async def start_all():
     # 1️⃣ Запуск PX4 и ожидание готовности MAVLink
     procs = await start_px4_instances(cfg)
 
-    # 2️⃣ Ожидание подключения MAVSDK ко всем PX4
-    print("\n🕹️  Подключаем MAVSDK ко всем PX4-дронам...")
-    tasks = []
+    # 2️⃣ MAVSDK подключается изнутри bridge-процесса — держать здесь параллельное
+    # соединение нельзя: mavsdk_server-ы конкурируют за один UDP-порт и бьют
+    # друг друга. Просто небольшая пауза для готовности PX4.
+    print("\n🕹️  PX4-инстансы готовы, bridge подключит MAVSDK самостоятельно.")
+    await asyncio.sleep(1.0)
+
+    # ▶️  MAVSDK Bridge — по одному процессу на дрон (см. комментарий в mavsdk_bridge.py).
+    mavsdk_bridges = []
     for d in cfg["drones"]:
-        port = d["mavlink_out"]
-        tasks.append(connect_to_px4(d["id"], port, timeout=120))
-        time.sleep(1.0)
-
-    # ждём, пока все дроны подключатся
-    drones = await asyncio.gather(*tasks)
-    print("✅ Все MAVSDK-соединения установлены!")
-
-    # ▶️  MAVSDK Bridge — публикует телеметрию PX4 → MQTT
-    print("▶️  MAVSDK Bridge: python -m simulator.mavsdk_bridge")
-    mavsdk_bridge = run_component(
-        "MAVSDK Bridge",
-        ["python", "-m", "simulator.mavsdk_bridge"],
-        cwd="src"
-    )
-    time.sleep(0.4)
+        did = str(d["id"])
+        print(f"▶️  MAVSDK Bridge for drone {did}")
+        mavsdk_bridges.append(run_component(
+            f"MAVSDK Bridge {did}",
+            ["python", "-m", "simulator.mavsdk_bridge"],
+            cwd="src",
+            env={"DRONE_ID": did},
+        ))
+        time.sleep(0.4)
 
     # 3️⃣ Теперь можно запускать остальные сервисы
     print("▶️  Telemetry Ingest: python -m drone_core.workers.telemetry_ingest")

@@ -22,11 +22,19 @@ def plan_order(order: Order, cruise_mps: float = 10.0) -> Mission:
     a1 = order.addr1
     a2 = order.addr2
 
+    # Перед LAND добавляем approach-waypoint над базой на малой высоте (10 м):
+    # без него PX4/MAVSDK LAND-action приземляется в текущих координатах
+    # дрона, а не на базе — дрон «садится где попало».
+    approach_alt = 10.0
+    # hold_s=0: без зависания в точках. В PX4 v1.17-alpha1+SIH hold запускает
+    # landing-detector-false-positive через несколько секунд и дрон садится
+    # посреди маршрута. Fly-through решает проблему.
     wps: List[Waypoint] = [
         Waypoint(pos=LLA(lat=base.lat, lon=base.lon, alt=base.alt), kind="TAKEOFF"),
-        Waypoint(pos=LLA(lat=a1.lat, lon=a1.lon, alt=a1.alt), kind="NAV", hold_s=3.0),
-        Waypoint(pos=LLA(lat=a2.lat, lon=a2.lon, alt=a2.alt), kind="NAV", hold_s=3.0),
-        Waypoint(pos=LLA(lat=base.lat, lon=base.lon, alt=base.alt), kind="LAND"),
+        Waypoint(pos=LLA(lat=a1.lat, lon=a1.lon, alt=a1.alt), kind="NAV", hold_s=0.0),
+        Waypoint(pos=LLA(lat=a2.lat, lon=a2.lon, alt=a2.alt), kind="NAV", hold_s=0.0),
+        Waypoint(pos=LLA(lat=base.lat, lon=base.lon, alt=approach_alt), kind="NAV", hold_s=0.0),
+        Waypoint(pos=LLA(lat=base.lat, lon=base.lon, alt=0.0), kind="LAND"),
     ]
 
     d = 0.0

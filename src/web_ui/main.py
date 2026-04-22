@@ -49,8 +49,28 @@ async def _startup():
     # Главный event loop FastAPI
     main_loop = asyncio.get_running_loop()
 
-    # Сохраняем активных дронов в памяти
+    # Сохраняем активных дронов + активные миссии в памяти
     app.state.active_drones = {}
+    app.state.active_missions = {}  # {mission_id: {...}}
+
+    def _update_mission(mid: str, **fields):
+        import time as _t
+        m = app.state.active_missions.setdefault(mid, {
+            "mission_id": mid,
+            "vehicle_id": None,
+            "status": "PLANNED",
+            "progress_current": 0,
+            "progress_total": 0,
+            "waypoints": [],
+        })
+        m.update({k: v for k, v in fields.items() if v is not None})
+        m["updated"] = _t.time()
+        # Уберём завершённые миссии через 30с (чтобы UI показал «COMPLETED» короткое время).
+        if m["status"] == "COMPLETED":
+            async def _cleanup(_mid=mid):
+                await asyncio.sleep(30)
+                app.state.active_missions.pop(_mid, None)
+            main_loop.call_soon_threadsafe(asyncio.create_task, _cleanup())
 
     # --- обработчик сообщений MQTT ---
     def _mqtt_handler(message):
@@ -120,10 +140,39 @@ async def _startup():
 
         elif topic.endswith("/planned"):
             msg["type"] = "mission_planned"
-        elif topic.endswith("/status"):
-            msg["type"] = "mission_status"
+            mid = topic.split("/")[1] if len(topic.split("/")) > 1 else None
+            if mid and isinstance(data, dict):
+                _update_mission(
+                    mid,
+                    status="PLANNED",
+                    waypoints=data.get("waypoints", []),
+                )
         elif topic.endswith("/assigned"):
             msg["type"] = "mission_assigned"
+            mid = topic.split("/")[1] if len(topic.split("/")) > 1 else None
+            if mid and isinstance(data, dict):
+                _update_mission(
+                    mid,
+                    status="ASSIGNED",
+                    vehicle_id=data.get("vehicle_id"),
+                )
+        elif topic.endswith("/status"):
+            msg["type"] = "mission_status"
+            mid = topic.split("/")[1] if len(topic.split("/")) > 1 else None
+            if mid and isinstance(data, dict):
+                status = data.get("status")
+                _update_mission(mid, status=status, vehicle_id=data.get("vehicle_id"))
+        elif topic.endswith("/progress"):
+            msg["type"] = "mission_progress"
+            mid = topic.split("/")[1] if len(topic.split("/")) > 1 else None
+            if mid and isinstance(data, dict):
+                _update_mission(
+                    mid,
+                    progress_current=data.get("current", 0),
+                    progress_total=data.get("total", 0),
+                    vehicle_id=data.get("vehicle_id"),
+                    status="IN_PROGRESS" if int(data.get("current", 0)) > 0 else None,
+                )
 
         # --- Отправка всем WebSocket клиентам ---
         async def _send_to_all():
@@ -142,6 +191,7 @@ async def _startup():
     bus.subscribe("mission/+/planned", _mqtt_handler, qos=1)
     bus.subscribe("mission/+/status", _mqtt_handler, qos=1)
     bus.subscribe("mission/+/assigned", _mqtt_handler, qos=1)
+    bus.subscribe("mission/+/progress", _mqtt_handler, qos=0)
 
 
 # === Маршруты API ===
@@ -246,3 +296,12 @@ async def api_free_drones():
     """Возвращает только свободных дронов"""
     free = [d for d in app.state.active_drones.values() if d.get("status") in ("IDLE", "ACTIVE")]
     return {"drones": free}
+
+
+@app.get("/api/active_missions")
+async def api_active_missions():
+    """Возвращает список активных миссий с их текущим прогрессом."""
+    ms = list(app.state.active_missions.values())
+    # сортируем: невыполненные сверху, COMPLETED в конце
+    ms.sort(key=lambda m: (m.get("status") == "COMPLETED", -m.get("updated", 0)))
+    return {"missions": ms}

@@ -12,19 +12,23 @@ simulator:
   home:
     lat: 43.0747
     lon: -89.3842
-    alt: 270.0
+    alt: 0.0
 
 drones:
+  # mavlink_out = offboard-link remote port PX4 (14540 + instance).
+  # PX4 шлёт туда активно (mavlink start -o), MAVSDK listen на этот порт.
+  # Для multi-drone каждый System() получает уникальный gRPC-порт (grpc_port),
+  # иначе два mavsdk_server конфликтуют.
   - id: 0
     name: "sim_drone_1"
     px4_path: "PX4-Autopilot"
     udp_port: 14540
-    mavlink_out: 14550
+    mavlink_out: 14540
     instance: 0
 
   - id: 1
     name: "sim_drone_2"
     px4_path: "PX4-Autopilot"
     udp_port: 14541
-    mavlink_out: 14551
+    mavlink_out: 14541
     instance: 1

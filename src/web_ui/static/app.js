@@ -45,6 +45,9 @@ const socket = new WebSocket(`ws://${window.location.host}/ws`);
 socket.onopen = () => console.log("✅ WebSocket подключен");
 socket.onclose = () => console.log("❌ WebSocket закрыт");
 
+// Живой кеш последней позиции каждого дрона (для таблицы миссий).
+const lastDronePos = {}; // { [vehId]: {lat, lon, alt} }
+
 socket.onmessage = (event) => {
   const msg = JSON.parse(event.data);
 
@@ -53,14 +56,18 @@ socket.onmessage = (event) => {
     const id = msg.topic.split("/")[1]; // telem/<id>/...
     const { lat, lon, alt } = msg.payload;
     upsertDroneMarker(id, lat, lon);
-    // обновим Fleet-таблицу «на лету»
+    lastDronePos[id] = { lat, lon, alt };
     scheduleFleetRefreshSoon();
+    scheduleMissionsRefreshSoon();
   }
 
   // ---- появление активного дрона ----
   if (msg.type === "drone_active" && msg.payload) {
     const d = msg.payload;
-    if (d.lat && d.lon) upsertDroneMarker(d.id || "drone", d.lat, d.lon);
+    if (d.lat && d.lon) {
+      upsertDroneMarker(d.id || "drone", d.lat, d.lon);
+      lastDronePos[d.id] = { lat: d.lat, lon: d.lon, alt: d.alt };
+    }
     scheduleFleetRefreshSoon();
   }
 
@@ -72,6 +79,13 @@ socket.onmessage = (event) => {
       w.pos?.lon ?? w.lon,
     ]);
     drawMissionPolyline(id, coords);
+    scheduleMissionsRefreshSoon();
+  }
+
+  // ---- progress / status / assigned — обновляем таблицу миссий ----
+  if (msg.type === "mission_progress" || msg.type === "mission_status" ||
+      msg.type === "mission_assigned") {
+    scheduleMissionsRefreshSoon();
   }
 };
 
@@ -200,3 +214,50 @@ async function loadFreeDrones() {
 loadFreeDrones();
 // периодически актуализируем
 setInterval(loadFreeDrones, 4000);
+
+// ========== Active Missions (под активными заказами) ==========
+async function loadActiveMissions() {
+  try {
+    const res = await fetch("/api/active_missions");
+    const data = await res.json();
+    const missions = data.missions || [];
+    const tbody = document.querySelector("#missions-table tbody");
+    tbody.innerHTML = "";
+    if (missions.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:#999;text-align:center;">— нет активных миссий —</td></tr>`;
+      return;
+    }
+    missions.forEach((m) => {
+      const total = m.progress_total || 0;
+      const cur = m.progress_current || 0;
+      const pct = total > 0 ? Math.round((cur / total) * 100) : 0;
+      const pos = lastDronePos[m.vehicle_id];
+      const posStr = pos
+        ? `${(+pos.lat).toFixed(5)}, ${(+pos.lon).toFixed(5)} / ${(+pos.alt).toFixed(1)}m`
+        : "—";
+      const statusClass = `m-status-${m.status || "PLANNED"}`;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${m.mission_id}</td>
+        <td>${m.vehicle_id || "—"}</td>
+        <td class="${statusClass}">${m.status || ""}</td>
+        <td>
+          <span class="progress-bar"><span style="width:${pct}%"></span></span>
+          ${cur}/${total}
+        </td>
+        <td>${posStr}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.error("Не удалось загрузить активные миссии:", e);
+  }
+}
+loadActiveMissions();
+setInterval(loadActiveMissions, 2000);
+
+let missionsRefreshTimer = null;
+function scheduleMissionsRefreshSoon() {
+  clearTimeout(missionsRefreshTimer);
+  missionsRefreshTimer = setTimeout(loadActiveMissions, 200);
+}
