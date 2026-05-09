@@ -8,35 +8,37 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/static/style.css?v=3" />
-  <link rel="stylesheet" href="/static/launcher.css?v=1" />
+  <link rel="stylesheet" href="/static/style.css?v=5" />
+  <link rel="stylesheet" href="/static/launcher.css?v=2" />
 </head>
 <body class="launcher-body">
 
+<div class="classification top">UNCLASSIFIED // FOR OFFICIAL USE ONLY · DRONE OPS DEMO</div>
+
 <header class="topbar">
   <div class="brand">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 3v18M3 12h18"/>
       <circle cx="12" cy="12" r="3" fill="currentColor"/>
-      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="1.5"/>
     </svg>
     <div class="brand-text">
-      <div class="brand-title">DRONE OPS</div>
-      <div class="brand-sub">LAUNCHER</div>
+      <div class="brand-title">SENTINEL UAS</div>
+      <div class="brand-sub">Launcher · v3.4</div>
     </div>
   </div>
   <div class="topbar-spacer"></div>
   <div class="clock">
     <div id="clock-time" class="mono">--:--:--</div>
-    <div class="clock-tz">UTC</div>
+    <div class="clock-tz">UTC · ZULU</div>
   </div>
 </header>
 
 <main class="launcher-main">
   <div class="launcher-hero">
-    <div class="hero-eyebrow">SELECT OPERATING MODE</div>
+    <div class="hero-eyebrow">Operating mode selection</div>
     <div class="hero-title">Что запускаем сегодня?</div>
     <div class="hero-sub">Выбери один из режимов работы. Можно сменить позже, остановив текущий и вернувшись на эту страницу.</div>
   </div>
@@ -118,6 +120,8 @@
     <span id="launcher-msg"></span>
   </div>
 </main>
+
+<div class="classification bot">UNCLASSIFIED // FOR OFFICIAL USE ONLY · DRONE OPS DEMO</div>
 
 <script src="/static/launcher.js?v=1"></script>
 </body>

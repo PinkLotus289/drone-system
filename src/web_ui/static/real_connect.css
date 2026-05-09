@@ -1,75 +1,95 @@
 /* =============================================
-   Real Connect: form + sidebar + checks grid
+   Real Connect · aerospace style
    ============================================= */
 
 .real-warn-banner {
-  background: rgba(251, 146, 60, 0.12);
-  border-bottom: 1px solid rgba(251, 146, 60, 0.4);
-  color: var(--orange);
+  background: var(--warning-soft);
+  border-bottom: 1.5px solid var(--warning);
+  color: var(--warning);
   text-align: center;
-  font-size: 11px;
-  font-weight: 600;
+  font: 700 11px 'IBM Plex Sans', sans-serif;
   letter-spacing: 0.18em;
   padding: 8px 16px;
+  text-transform: uppercase;
 }
 
 .real-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 0;
+  grid-template-columns: 304px 1fr;
+  gap: 1px;
   min-height: 0;
   overflow: hidden;
+  background: var(--border);
 }
 
 .real-sidebar {
-  border-right: 1px solid var(--border);
+  border-right: 0;
   padding: 16px 14px;
-  background: var(--bg-elev);
+  background: var(--paper);
   overflow: auto;
   display: flex;
   flex-direction: column;
 }
 
-.panel-head {
+/* re-style панели заголовков, чтобы соответствовать style.css panel-head */
+.real-sidebar .panel-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  color: var(--text-mute);
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  font: 700 10px 'IBM Plex Sans', sans-serif;
+  letter-spacing: 0.22em;
+  color: var(--ink-0);
+  padding: 0 0 12px;
+  border-bottom: 1.5px solid var(--ink-0);
   margin-bottom: 12px;
+  text-transform: uppercase;
+  background: transparent;
 }
-.panel-count {
-  font-size: 11px;
+.real-sidebar .panel-head::before { display: none; }
+.real-sidebar .panel-count {
+  font: 700 11px 'IBM Plex Mono', 'JetBrains Mono', monospace;
   color: var(--accent);
-  background: rgba(94,234,212,0.08);
+  background: var(--accent-soft);
   padding: 2px 8px;
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: 0;
 }
 
 .profile-list { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .profile-empty {
   text-align: center;
-  color: var(--text-mute);
+  color: var(--ink-3);
   font-size: 11px;
   padding: 20px 0;
+  font-style: italic;
 }
 .profile-item {
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
   cursor: pointer;
-  transition: border-color .15s, background .15s;
+  background: var(--paper);
+  transition: border-color .12s, background .12s;
 }
-.profile-item:hover { border-color: var(--border-strong); background: rgba(94,234,212,0.04); }
-.profile-item.active { border-color: var(--orange); background: rgba(251,146,60,0.08); }
+.profile-item:hover { border-color: var(--ink-0); background: var(--paper-tint); }
+.profile-item.active {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  box-shadow: inset 3px 0 0 var(--warning);
+}
 
-.profile-name { font-weight: 600; font-size: 13px; color: var(--text); }
-.profile-meta { font-size: 10px; color: var(--text-mute); letter-spacing: 0.06em; margin-top: 2px; }
+.profile-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink-0);
+}
+.profile-meta {
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+}
 
 .real-content {
   padding: 24px;
@@ -77,13 +97,22 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+  background: var(--bg);
 }
 
 .content-card {
-  background: var(--bg-panel);
+  background: var(--paper);
   border: 1px solid var(--border);
-  border-radius: 12px;
   padding: 22px;
+  position: relative;
+}
+.content-card::before {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--warning);
 }
 .content-card-head {
   display: flex;
@@ -91,14 +120,22 @@
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
 }
 .content-card-title {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   margin-top: 6px;
+  color: var(--ink-0);
+  letter-spacing: -0.005em;
 }
 .content-card-actions { display: flex; gap: 8px; }
-.small { font-size: 11px; color: var(--text-mute); }
+.small {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+}
 
 .real-form { display: flex; flex-direction: column; gap: 14px; }
 
@@ -108,10 +145,9 @@
   gap: 6px;
 }
 .form-row label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--text-dim);
+  font: 700 10px 'IBM Plex Sans', sans-serif;
+  letter-spacing: 0.16em;
+  color: var(--ink-2);
   text-transform: uppercase;
   display: flex;
   justify-content: space-between;
@@ -120,28 +156,30 @@
 .form-row .hint {
   font-size: 10px;
   font-weight: 400;
-  color: var(--text-mute);
+  color: var(--ink-3);
   text-transform: none;
   letter-spacing: 0;
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
 }
 
 .form-row input[type=text],
 .form-row input[type=number],
 .form-row select,
 .form-row textarea {
-  background: var(--bg);
+  background: var(--paper);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
+  color: var(--ink-1);
   padding: 8px 12px;
-  font: 400 13px 'Inter', sans-serif;
+  font: 500 13px 'IBM Plex Sans', sans-serif;
   outline: none;
-  transition: border-color .15s;
+  transition: border-color .12s;
 }
 .form-row input:focus,
 .form-row select:focus,
 .form-row textarea:focus {
-  border-color: var(--orange);
+  border-color: var(--warning);
+  outline: 2px solid var(--warning-soft);
+  outline-offset: -2px;
 }
 
 .form-row textarea { resize: vertical; min-height: 40px; font-family: inherit; }
@@ -154,43 +192,43 @@
 .form-row.two-col label { margin-bottom: 6px; }
 
 .form-divider {
-  font-size: 10px;
-  font-weight: 700;
+  font: 700 10px 'IBM Plex Sans', sans-serif;
   letter-spacing: 0.24em;
-  color: var(--text-mute);
-  border-top: 1px solid var(--border);
+  color: var(--ink-3);
+  border-top: 1px solid var(--hairline);
   padding-top: 14px;
   margin-top: 6px;
+  text-transform: uppercase;
 }
 
 .seg {
   display: flex;
   border: 1px solid var(--border);
-  border-radius: 6px;
   overflow: hidden;
   width: fit-content;
   flex-wrap: wrap;
 }
 .seg-btn {
   padding: 6px 12px;
-  background: transparent;
+  background: var(--paper);
   border: 0;
-  color: var(--text-mute);
-  font: 600 11px 'Inter', sans-serif;
-  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font: 700 11px 'IBM Plex Sans', sans-serif;
+  letter-spacing: 0.1em;
   cursor: pointer;
-  transition: background .15s, color .15s;
+  transition: background .12s, color .12s;
   border-right: 1px solid var(--border);
+  text-transform: uppercase;
 }
 .seg-btn:last-child { border-right: 0; }
-.seg-btn:hover { color: var(--text); }
-.seg-btn.active { background: var(--orange); color: #0a0f1c; }
+.seg-btn:hover { color: var(--ink-0); background: var(--paper-tint); }
+.seg-btn.active { background: var(--warning); color: var(--paper); }
 
 .link-btn {
   background: transparent;
   border: 0;
   color: var(--accent);
-  font: 500 11px 'Inter', sans-serif;
+  font: 600 11px 'IBM Plex Sans', sans-serif;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -203,52 +241,90 @@
   gap: 12px;
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--hairline);
 }
+
+/* Buttons inside form (real_connect uses .btn from launcher.css) */
+.form-actions .btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--ink-0);
+  font: 700 11px 'IBM Plex Sans', sans-serif;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.form-actions .btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--ink-0);
+}
+.form-actions .btn-primary {
+  background: var(--warning);
+  color: var(--paper);
+  border-color: var(--warning);
+}
+.form-actions .btn-primary:hover:not(:disabled) {
+  background: #92400e;
+  border-color: #92400e;
+}
+.form-actions .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Check grid */
 .check-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 14px;
 }
 .check {
   border: 1px solid var(--border);
-  border-radius: 8px;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  background: var(--paper);
+  position: relative;
 }
-.check.ok { border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.06); }
-.check.warn { border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.06); }
-.check.bad { border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.06); }
+.check::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--ink-3);
+}
+.check.ok { border-color: var(--success); background: var(--success-soft); }
+.check.ok::before { background: var(--success); }
+.check.warn { border-color: var(--warning); background: var(--warning-soft); }
+.check.warn::before { background: var(--warning); }
+.check.bad { border-color: var(--error); background: var(--error-soft); }
+.check.bad::before { background: var(--error); }
 .check.info { border-color: var(--border); }
 
 .check-label {
-  font-size: 10px;
-  font-weight: 700;
+  font: 700 9px 'IBM Plex Sans', sans-serif;
   letter-spacing: 0.18em;
-  color: var(--text-mute);
+  color: var(--ink-3);
+  text-transform: uppercase;
 }
 .check-value {
   font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: var(--ink-0);
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
 }
 .check.ok .check-value { color: var(--success); }
 .check.warn .check-value { color: var(--warning); }
 .check.bad .check-value { color: var(--error); }
 
 .raw-result {
-  background: rgba(0,0,0,0.32);
+  background: var(--paper-tint);
   border: 1px solid var(--border);
-  border-radius: 6px;
   padding: 10px 12px;
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--ink-2);
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
   max-height: 240px;
   overflow: auto;
   white-space: pre-wrap;

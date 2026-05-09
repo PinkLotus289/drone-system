@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sentinel · Mission Control · Enterprise</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg-0: #0b0d12;
+    --bg-1: #11141c;
+    --bg-2: #161a24;
+    --bg-3: #1c2230;
+    --bg-card: #1a1f2b;
+    --line: rgba(255, 255, 255, 0.06);
+    --line-strong: rgba(255, 255, 255, 0.12);
+    --text: #e8ecf3;
+    --text-dim: #99a3b3;
+    --text-mute: #5c6878;
+    --accent: #6366f1;
+    --accent-soft: rgba(99, 102, 241, 0.12);
+    --accent-hover: #7c7ff5;
+    --teal: #14b8a6;
+    --teal-soft: rgba(20, 184, 166, 0.12);
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.45);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg-0); color: var(--text);
+    font: 13px/1.5 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; font-feature-settings: 'tnum' 1; }
+  body { display: flex; }
+
+  /* SIDEBAR */
+  .sidebar {
+    flex: 0 0 240px;
+    background: var(--bg-1);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    padding: 18px 14px;
+  }
+  .org {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 6px 18px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 14px;
+  }
+  .org-logo {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 14px;
+    box-shadow: 0 4px 10px rgba(99, 102, 241, 0.35);
+  }
+  .org-name { font-weight: 700; font-size: 14px; }
+  .org-tier { font-size: 11px; color: var(--text-mute); }
+
+  .nav-section {
+    font-size: 10px; color: var(--text-mute);
+    letter-spacing: 0.16em; font-weight: 700;
+    text-transform: uppercase;
+    padding: 14px 8px 6px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background .12s, color .12s;
+  }
+  .nav-item:hover { background: var(--bg-2); color: var(--text); }
+  .nav-item.active {
+    background: var(--accent-soft);
+    color: var(--accent-hover);
+  }
+  .nav-item .ic {
+    width: 16px; height: 16px; flex-shrink: 0; opacity: 0.85;
+  }
+  .nav-item .badge {
+    margin-left: auto;
+    font: 600 10px 'JetBrains Mono', monospace;
+    background: var(--bg-3);
+    color: var(--text-dim);
+    padding: 1px 6px; border-radius: 10px;
+  }
+  .nav-item .badge.live { background: rgba(239, 68, 68, 0.12); color: var(--red); }
+  .nav-item .badge.live::before {
+    content: ''; display: inline-block;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--red); margin-right: 4px;
+    vertical-align: middle;
+    animation: live-pulse 1.5s infinite;
+  }
+  @keyframes live-pulse { 50% { opacity: 0.3; } }
+
+  .sidebar-footer {
+    margin-top: auto;
+    padding: 12px 8px;
+    border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #14b8a6, #0d9488);
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 12px;
+  }
+  .user-name { font-size: 13px; font-weight: 600; }
+  .user-role { font-size: 11px; color: var(--text-mute); }
+
+  /* MAIN */
+  .main {
+    flex: 1;
+    display: flex; flex-direction: column;
+    overflow: hidden; min-width: 0;
+  }
+  .topbar {
+    flex: 0 0 60px;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-1);
+  }
+  .crumbs { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 13px; }
+  .crumbs .sep { color: var(--text-mute); }
+  .crumbs .cur { color: var(--text); font-weight: 600; }
+
+  .topbar-spacer { flex: 1; }
+
+  .search {
+    width: 320px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .12s, background .12s;
+  }
+  .search:focus { border-color: var(--accent); background: var(--bg-3); }
+  .search::placeholder { color: var(--text-mute); }
+
+  .top-action {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 10px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all .12s;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px;
+  }
+  .top-action:hover { color: var(--text); border-color: var(--line-strong); background: var(--bg-3); }
+  .top-action.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+  .top-action.primary:hover { background: var(--accent-hover); }
+
+  .notif {
+    position: relative;
+    width: 36px; height: 36px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-dim);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .notif::after {
+    content: '3'; position: absolute;
+    top: -4px; right: -4px;
+    background: var(--red); color: white;
+    font: 700 9px 'JetBrains Mono', monospace;
+    width: 16px; height: 16px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--bg-1);
+  }
+
+  /* PAGE */
+  .page {
+    flex: 1; overflow-y: auto;
+    padding: 24px 28px 32px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  .page-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 18px;
+  }
+  .page-title {
+    font-size: 22px; font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+  .page-sub { font-size: 13px; color: var(--text-dim); }
+  .page-meta { display: flex; gap: 8px; }
+
+  /* KPI ROW */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+  .kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi-card::after {
+    content: ''; position: absolute;
+    inset: 0; pointer-events: none;
+    background: linear-gradient(135deg, transparent 60%, var(--accent-soft) 140%);
+    opacity: 0.6;
+  }
+  .kpi-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); color: var(--accent-hover);
+  }
+  .kpi-card.teal .kpi-icon { background: var(--teal-soft); color: var(--teal); }
+  .kpi-card.green .kpi-icon { background: rgba(16, 185, 129, 0.12); color: var(--green); }
+  .kpi-card.amber .kpi-icon { background: rgba(245, 158, 11, 0.12); color: var(--amber); }
+  .kpi-l { font-size: 12px; color: var(--text-dim); font-weight: 500; }
+  .kpi-v { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  .kpi-foot {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .kpi-delta { color: var(--green); font-weight: 600; }
+  .kpi-delta.down { color: var(--red); }
+  .spark {
+    position: absolute; right: 16px; bottom: 16px;
+    width: 80px; height: 28px; pointer-events: none;
+  }
+
+  /* DASHBOARD GRID */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .card-title { font-size: 14px; font-weight: 600; }
+  .card-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .card-actions { display: flex; gap: 6px; }
+  .tab-btn {
+    padding: 4px 10px;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text-dim);
+    font: 600 11px 'Inter', sans-serif;
+    cursor: pointer;
+  }
+  .tab-btn.active { background: var(--bg-3); color: var(--text); border-color: var(--line-strong); }
+
+  /* MAP CARD */
+  .map-card { display: flex; flex-direction: column; }
+  .map-body {
+    height: 420px;
+    position: relative;
+    background: linear-gradient(180deg, #0e1118 0%, #161a24 100%);
+    overflow: hidden;
+  }
+  .map-svg { width: 100%; height: 100%; display: block; }
+  .map-overlay {
+    position: absolute;
+    background: rgba(22, 26, 36, 0.92);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-md);
+  }
+  .map-legend {
+    top: 12px; left: 12px;
+    padding: 12px 14px;
+  }
+  .legend-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 11px; color: var(--text-dim); }
+  .legend-row .lg { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .legend-title { font-size: 10px; color: var(--text-mute); letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
+
+  .map-tools {
+    top: 12px; right: 12px;
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 6px;
+  }
+  .tool {
+    width: 32px; height: 32px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .tool:hover { background: var(--bg-3); color: var(--text); }
+  .tool.active { background: var(--accent-soft); color: var(--accent-hover); }
+
+  .map-brief {
+    bottom: 12px; left: 12px;
+    padding: 14px 16px;
+    min-width: 320px;
+  }
+  .brief-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .brief-title { font-weight: 600; font-size: 14px; }
+  .brief-tag {
+    font: 600 10px 'JetBrains Mono', monospace;
+    padding: 2px 7px; border-radius: 4px;
+    background: var(--accent-soft); color: var(--accent-hover);
+    letter-spacing: 0.1em;
+  }
+  .brief-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    font-size: 11px;
+  }
+  .brief-grid .l { color: var(--text-mute); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px; }
+  .brief-grid .v { font: 600 13px 'JetBrains Mono', monospace; color: var(--text); margin-top: 2px; }
+
+  /* FLEET TABLE */
+  .table-wrap { overflow-x: auto; }
+  table.fleet { width: 100%; border-collapse: collapse; }
+  table.fleet th, table.fleet td {
+    text-align: left;
+    padding: 11px 18px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.fleet th {
+    color: var(--text-mute);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    background: var(--bg-2);
+    position: sticky; top: 0;
+  }
+  table.fleet tr:last-child td { border-bottom: 0; }
+  table.fleet tr:hover td { background: var(--bg-2); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font: 600 11px 'Inter', sans-serif;
+  }
+  .pill::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor;
+  }
+  .pill.ok { background: rgba(16, 185, 129, 0.14); color: var(--green); }
+  .pill.live { background: rgba(99, 102, 241, 0.14); color: var(--accent-hover); }
+  .pill.warn { background: rgba(245, 158, 11, 0.14); color: var(--amber); }
+  .pill.crit { background: rgba(239, 68, 68, 0.14); color: var(--red); }
+  .pill.idle { background: rgba(255, 255, 255, 0.06); color: var(--text-dim); }
+
+  .mini-bar {
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .mini-bar .track {
+    width: 70px; height: 5px;
+    background: var(--bg-3);
+    border-radius: 3px; overflow: hidden;
+  }
+  .mini-bar .fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+    border-radius: 3px;
+  }
+  .mini-bar .fill.warn { background: linear-gradient(90deg, var(--amber), #fcd34d); }
+  .mini-bar .fill.crit { background: linear-gradient(90deg, var(--red), #fca5a5); }
+
+  /* RIGHT COLUMN */
+  .activity { padding: 10px 16px 16px; }
+  .activity-row {
+    display: grid;
+    grid-template-columns: 8px 1fr;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .activity-row:last-child { border-bottom: 0; }
+  .ar-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    margin-top: 5px;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .ar-dot.green { background: var(--green); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18); }
+  .ar-dot.amber { background: var(--amber); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18); }
+  .ar-dot.red { background: var(--red); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); }
+  .ar-msg { font-size: 12px; color: var(--text); }
+  .ar-meta { font-size: 11px; color: var(--text-mute); margin-top: 2px; display: flex; gap: 10px; }
+  .ar-meta .who { color: var(--accent-hover); font-weight: 600; }
+
+  /* CHART CARD */
+  .chart-card { padding: 16px 18px 18px; }
+  .chart-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+  .chart-big { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+  .chart-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .chart-svg { width: 100%; height: 110px; }
+
+  /* COMPLIANCE STRIP */
+  .compliance {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    padding: 14px 18px;
+    border-top: 1px solid var(--line);
+    background: var(--bg-2);
+  }
+  .badge-cert {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 10px;
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    font: 600 11px 'Inter', sans-serif;
+    color: var(--text-dim);
+  }
+  .badge-cert::before {
+    content: '✓'; color: var(--green); font-weight: 700;
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+
+  /* ROUTE ICON SVG (for nav) */
+  .ic { stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="org">
+    <div class="org-logo">S</div>
+    <div>
+      <div class="org-name">Sentinel</div>
+      <div class="org-tier">Defense · Tier I</div>
+    </div>
+  </div>
+
+  <div class="nav-section">Operations</div>
+  <div class="nav-item active">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v12H3z"/><path d="M9 21V12h6v9"/></svg>
+    Mission Control
+    <span class="badge live">LIVE</span>
+  </div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2v20M2 12h20"/></svg>
+    Fleet
+    <span class="badge">06/08</span>
+  </div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    Mission Planner
+  </div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
+    Tasking Queue
+    <span class="badge">12</span>
+  </div>
+
+  <div class="nav-section">Intelligence</div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+    Sensor Feeds
+  </div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    Reports & AAR
+  </div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-7"/></svg>
+    Analytics
+  </div>
+
+  <div class="nav-section">Admin</div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M12 1l9 4v6c0 5-4 9-9 11-5-2-9-6-9-11V5z"/></svg>
+    Audit & Compliance
+  </div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+    Operators & Roles
+  </div>
+  <div class="nav-item">
+    <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33"/></svg>
+    Settings
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="avatar">MV</div>
+    <div>
+      <div class="user-name">M. Volk</div>
+      <div class="user-role">Operator · Cleared</div>
+    </div>
+  </div>
+</aside>
+
+<main class="main">
+
+  <header class="topbar">
+    <div class="crumbs">
+      <span>Operations</span>
+      <span class="sep">/</span>
+      <span class="cur">Mission Control · NIGHT-OWL</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <input class="search" placeholder="Search drones, missions, operators…  ⌘K" />
+    <button class="notif">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+    </button>
+    <button class="top-action">Export AAR</button>
+    <button class="top-action primary">+ New Mission</button>
+  </header>
+
+  <div class="page">
+
+    <div class="page-head">
+      <div>
+        <div class="page-title">Mission Control</div>
+        <div class="page-sub">Operation NIGHT-OWL · 24-117 · Sector K-7 · Live ops since 14:00 UTC</div>
+      </div>
+      <div class="page-meta">
+        <button class="top-action"><span style="color:var(--green)">●</span>&nbsp;All systems operational</button>
+        <button class="top-action">9 May 2026 · 18:23 UTC</button>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+        <div class="kpi-l">Mission uptime</div>
+        <div class="kpi-v">99.94%</div>
+        <div class="kpi-foot"><span class="kpi-delta">+0.12%</span> vs last 30d</div>
+        <svg class="spark" viewBox="0 0 80 28" preserveAspectRatio="none"><polyline fill="none" stroke="rgb(99,102,241)" stroke-width="1.5" points="0,20 12,18 24,22 36,14 48,16 60,8 72,10 80,4"/></svg>
+      </div>
+      <div class="kpi-card teal">
+        <div class="kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+        <div class="kpi-l">Active sorties</div>
+        <div class="kpi-v">04 <span style="font-size:14px;color:var(--text-dim);font-weight:500">/ 06</span></div>
+        <div class="kpi-foot"><span class="kpi-delta">+1</span> in last hour</div>
+        <svg class="spark" viewBox="0 0 80 28" preserveAspectRatio="none"><polyline fill="none" stroke="rgb(20,184,166)" stroke-width="1.5" points="0,16 12,18 24,12 36,14 48,10 60,12 72,8 80,10"/></svg>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 13l4 4L19 7"/></svg></div>
+        <div class="kpi-l">Missions completed (30d)</div>
+        <div class="kpi-v">1,284</div>
+        <div class="kpi-foot"><span class="kpi-delta">+18.3%</span> vs prior period</div>
+        <svg class="spark" viewBox="0 0 80 28" preserveAspectRatio="none"><polyline fill="none" stroke="rgb(16,185,129)" stroke-width="1.5" points="0,22 12,20 24,18 36,16 48,12 60,10 72,6 80,4"/></svg>
+      </div>
+      <div class="kpi-card amber">
+        <div class="kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.41 0z"/><path d="M12 9v4M12 17h.01"/></svg></div>
+        <div class="kpi-l">Open incidents</div>
+        <div class="kpi-v">2</div>
+        <div class="kpi-foot"><span class="kpi-delta down">+1</span> in last hour · 1 critical</div>
+        <svg class="spark" viewBox="0 0 80 28" preserveAspectRatio="none"><polyline fill="none" stroke="rgb(245,158,11)" stroke-width="1.5" points="0,22 12,22 24,20 36,20 48,18 60,16 72,12 80,8"/></svg>
+      </div>
+    </div>
+
+    <!-- MAP + TABLE / RIGHT COL -->
+    <div class="grid">
+      <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+
+        <div class="card map-card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Live tactical map · Sector K-7</div>
+              <div class="card-sub">6 units · 2 active routes · 1 KOZ · 1 threat zone</div>
+            </div>
+            <div class="card-actions">
+              <button class="tab-btn active">Tactical</button>
+              <button class="tab-btn">Satellite</button>
+              <button class="tab-btn">Terrain</button>
+              <button class="tab-btn">Replay</button>
+            </div>
+          </div>
+          <div class="map-body">
+            <svg class="map-svg" viewBox="0 0 1200 420" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <pattern id="grid2" width="60" height="60" patternUnits="userSpaceOnUse">
+                  <path d="M 60 0 L 0 0 0 60" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="0.6"/>
+                </pattern>
+                <radialGradient id="aor2" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="rgba(99,102,241,0.08)"/>
+                  <stop offset="100%" stop-color="rgba(99,102,241,0)"/>
+                </radialGradient>
+                <radialGradient id="threat2" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="rgba(239,68,68,0.22)"/>
+                  <stop offset="100%" stop-color="rgba(239,68,68,0)"/>
+                </radialGradient>
+              </defs>
+              <rect width="1200" height="420" fill="url(#grid2)"/>
+              <ellipse cx="600" cy="220" rx="500" ry="200" fill="url(#aor2)"/>
+
+              <!-- Threat zone -->
+              <circle cx="940" cy="120" r="80" fill="url(#threat2)"/>
+              <circle cx="940" cy="120" r="80" fill="none" stroke="rgba(239,68,68,0.4)" stroke-width="1" stroke-dasharray="4 3"/>
+              <text x="940" y="125" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono" font-size="10" font-weight="700">SAM-2 (suspected)</text>
+
+              <!-- KOZ -->
+              <polygon points="80,50 280,40 320,180 160,200 60,120" fill="rgba(245,158,11,0.06)" stroke="rgba(245,158,11,0.5)" stroke-width="1.2" stroke-dasharray="6 4"/>
+              <text x="120" y="120" fill="#f59e0b" font-family="Inter" font-size="11" font-weight="700">No-fly · Civil ATC</text>
+
+              <!-- Base -->
+              <g transform="translate(280,310)">
+                <rect x="-10" y="-10" width="20" height="20" fill="rgba(20,184,166,0.18)" stroke="#14b8a6" stroke-width="1.5" rx="3"/>
+                <text x="16" y="-2" fill="#14b8a6" font-family="Inter" font-size="11" font-weight="700">FOB-Alpha</text>
+                <text x="16" y="11" fill="rgba(20,184,166,0.6)" font-family="JetBrains Mono" font-size="9">Base · 4 ready</text>
+              </g>
+
+              <!-- Routes -->
+              <path d="M280,310 L440,260 L580,210 L720,170 L840,140" fill="none" stroke="rgba(99,102,241,0.65)" stroke-width="1.5" stroke-dasharray="6 4"/>
+              <path d="M280,310 L420,330 L560,300 L680,270" fill="none" stroke="rgba(20,184,166,0.55)" stroke-width="1.5" stroke-dasharray="6 4"/>
+
+              <g fill="rgba(99,102,241,0.85)" font-family="JetBrains Mono" font-size="9" font-weight="600">
+                <circle cx="440" cy="260" r="3"/><text x="448" y="256">WP-1</text>
+                <circle cx="580" cy="210" r="3"/><text x="588" y="206">WP-2</text>
+                <circle cx="720" cy="170" r="3"/><text x="728" y="166">WP-3</text>
+                <circle cx="840" cy="140" r="4" fill="#6366f1" stroke="#fff" stroke-width="1"/><text x="850" y="144">OBJ</text>
+              </g>
+
+              <!-- Drone 1 -->
+              <g transform="translate(580,210)">
+                <circle r="22" fill="rgba(99,102,241,0.12)" stroke="rgba(99,102,241,0.4)" stroke-width="1"/>
+                <polygon points="0,-7 6,5 0,2 -6,5" fill="#6366f1"/>
+                <text x="11" y="-2" fill="#fff" font-family="Inter" font-size="11" font-weight="700">Raven-01</text>
+                <text x="11" y="10" fill="rgba(255,255,255,0.55)" font-family="JetBrains Mono" font-size="9">142m · 14.2 m/s</text>
+              </g>
+              <g transform="translate(520,240)">
+                <polygon points="0,-6 5,4 0,2 -5,4" fill="#6366f1"/>
+                <text x="9" y="-1" fill="#a5a8f3" font-family="Inter" font-size="10" font-weight="600">Raven-02</text>
+              </g>
+              <g transform="translate(420,290)">
+                <polygon points="0,-6 5,4 0,2 -5,4" fill="#f59e0b" transform="rotate(-90)"/>
+                <text x="9" y="-1" fill="#f59e0b" font-family="Inter" font-size="10" font-weight="600">Falcon-03 · RTB</text>
+              </g>
+              <g transform="translate(640,300)">
+                <polygon points="0,-6 5,4 0,2 -5,4" fill="#14b8a6" transform="rotate(45)"/>
+                <text x="9" y="-1" fill="#14b8a6" font-family="Inter" font-size="10" font-weight="600">Falcon-04</text>
+              </g>
+              <g transform="translate(800,250)">
+                <circle r="12" fill="none" stroke="#ef4444" stroke-dasharray="3 2" stroke-width="1"/>
+                <polygon points="0,-6 5,4 0,2 -5,4" fill="#ef4444"/>
+                <text x="9" y="-1" fill="#ef4444" font-family="Inter" font-size="10" font-weight="600">Shrike-06 · Link lost</text>
+              </g>
+
+              <!-- Scale -->
+              <g transform="translate(40,395)">
+                <rect width="60" height="3" fill="rgba(255,255,255,0.5)"/>
+                <rect x="60" width="60" height="3" fill="rgba(255,255,255,0.2)"/>
+                <text y="-4" fill="rgba(255,255,255,0.5)" font-family="JetBrains Mono" font-size="9">0</text>
+                <text x="60" y="-4" fill="rgba(255,255,255,0.5)" font-family="JetBrains Mono" font-size="9">2 km</text>
+              </g>
+            </svg>
+
+            <div class="map-overlay map-legend">
+              <div class="legend-title">Layers</div>
+              <div class="legend-row"><span class="lg" style="background:#6366f1"></span> Friendly UAS</div>
+              <div class="legend-row"><span class="lg" style="background:#14b8a6"></span> Recon UAS</div>
+              <div class="legend-row"><span class="lg" style="background:#f59e0b"></span> RTB / warning</div>
+              <div class="legend-row"><span class="lg" style="background:#ef4444"></span> Threat / link loss</div>
+              <div class="legend-row"><span class="lg" style="background:rgba(245,158,11,0.6)"></span> No-fly zone</div>
+            </div>
+
+            <div class="map-overlay map-tools">
+              <button class="tool active" title="Pan">✥</button>
+              <button class="tool" title="Measure">∡</button>
+              <button class="tool" title="Plan WP">✚</button>
+              <button class="tool" title="3D">⌬</button>
+              <button class="tool" title="Layers">≡</button>
+            </div>
+
+            <div class="map-overlay map-brief">
+              <div class="brief-head">
+                <div>
+                  <div class="brief-title">Raven-01 · selected</div>
+                  <div style="font-size:11px;color:var(--text-mute);margin-top:2px">UAS-NX7-014 · MQ Class II · op M.Volk</div>
+                </div>
+                <span class="brief-tag">ON MISSION</span>
+              </div>
+              <div class="brief-grid">
+                <div><div class="l">Altitude</div><div class="v">142 m</div></div>
+                <div><div class="l">Speed</div><div class="v">14.2 m/s</div></div>
+                <div><div class="l">Heading</div><div class="v">087°</div></div>
+                <div><div class="l">Battery</div><div class="v" style="color:var(--green)">78%</div></div>
+                <div><div class="l">Link</div><div class="v" style="color:var(--green)">92%</div></div>
+                <div><div class="l">ETA OBJ</div><div class="v">12:42</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Fleet</div>
+              <div class="card-sub">8 platforms · 6 active · 2 standby</div>
+            </div>
+            <div class="card-actions">
+              <button class="tab-btn active">All</button>
+              <button class="tab-btn">Airborne</button>
+              <button class="tab-btn">Maintenance</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="fleet">
+              <thead>
+                <tr>
+                  <th>Callsign</th>
+                  <th>Platform</th>
+                  <th>Status</th>
+                  <th>Mission</th>
+                  <th>Battery</th>
+                  <th>Link</th>
+                  <th>ETA</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><b>Raven-01</b><div style="font-size:10px;color:var(--text-mute)">UAS-NX7-014</div></td>
+                  <td>MQ Class II</td>
+                  <td><span class="pill live">on mission</span></td>
+                  <td>TSK-117-A · ISR</td>
+                  <td><span class="mini-bar"><span class="track"><span class="fill" style="width:78%"></span></span><span class="mono">78%</span></span></td>
+                  <td><span class="mono" style="color:var(--green)">92%</span></td>
+                  <td class="mono">12:42</td>
+                  <td>⋯</td>
+                </tr>
+                <tr>
+                  <td><b>Raven-02</b><div style="font-size:10px;color:var(--text-mute)">UAS-NX7-015</div></td>
+                  <td>MQ Class II</td>
+                  <td><span class="pill live">on mission</span></td>
+                  <td>TSK-117-B · Overwatch</td>
+                  <td><span class="mini-bar"><span class="track"><span class="fill" style="width:64%"></span></span><span class="mono">64%</span></span></td>
+                  <td><span class="mono" style="color:var(--green)">88%</span></td>
+                  <td class="mono">28:15</td>
+                  <td>⋯</td>
+                </tr>
+                <tr>
+                  <td><b>Falcon-03</b><div style="font-size:10px;color:var(--text-mute)">UAS-NX5-022</div></td>
+                  <td>Recon</td>
+                  <td><span class="pill warn">RTB · low</span></td>
+                  <td>TSK-115-Z · ended</td>
+                  <td><span class="mini-bar"><span class="track"><span class="fill warn" style="width:22%"></span></span><span class="mono" style="color:var(--amber)">22%</span></span></td>
+                  <td><span class="mono">75%</span></td>
+                  <td class="mono">04:12</td>
+                  <td>⋯</td>
+                </tr>
+                <tr>
+                  <td><b>Falcon-04</b><div style="font-size:10px;color:var(--text-mute)">UAS-NX5-023</div></td>
+                  <td>Recon</td>
+                  <td><span class="pill live">on mission</span></td>
+                  <td>TSK-117-C · LIDAR map</td>
+                  <td><span class="mini-bar"><span class="track"><span class="fill" style="width:71%"></span></span><span class="mono">71%</span></span></td>
+                  <td><span class="mono">81%</span></td>
+                  <td class="mono">06:51</td>
+                  <td>⋯</td>
+                </tr>
+                <tr>
+                  <td><b>Shrike-05</b><div style="font-size:10px;color:var(--text-mute)">UAS-NX9-007</div></td>
+                  <td>Logistics</td>
+                  <td><span class="pill idle">standby</span></td>
+                  <td>—</td>
+                  <td><span class="mini-bar"><span class="track"><span class="fill" style="width:100%"></span></span><span class="mono">100%</span></span></td>
+                  <td><span class="mono">99%</span></td>
+                  <td>—</td>
+                  <td>⋯</td>
+                </tr>
+                <tr>
+                  <td><b>Shrike-06</b><div style="font-size:10px;color:var(--text-mute)">UAS-NX9-008</div></td>
+                  <td>Logistics</td>
+                  <td><span class="pill crit">link loss</span></td>
+                  <td>auto-RTH</td>
+                  <td><span class="mini-bar"><span class="track"><span class="fill" style="width:54%"></span></span><span class="mono">54%</span></span></td>
+                  <td><span class="mono" style="color:var(--red)">lost</span></td>
+                  <td class="mono">—</td>
+                  <td>⋯</td>
+                </tr>
+                <tr>
+                  <td><b>Owl-07</b><div style="font-size:10px;color:var(--text-mute)">UAS-NX3-101</div></td>
+                  <td>Trainer</td>
+                  <td><span class="pill ok">ready</span></td>
+                  <td>—</td>
+                  <td><span class="mini-bar"><span class="track"><span class="fill" style="width:96%"></span></span><span class="mono">96%</span></span></td>
+                  <td><span class="mono">98%</span></td>
+                  <td>—</td>
+                  <td>⋯</td>
+                </tr>
+                <tr>
+                  <td><b>Owl-08</b><div style="font-size:10px;color:var(--text-mute)">UAS-NX3-102</div></td>
+                  <td>Trainer</td>
+                  <td><span class="pill idle">maintenance</span></td>
+                  <td>—</td>
+                  <td><span class="mini-bar"><span class="track"><span class="fill" style="width:0%"></span></span><span class="mono">—</span></span></td>
+                  <td><span class="mono">—</span></td>
+                  <td>—</td>
+                  <td>⋯</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="compliance">
+            <span class="badge-cert">FIPS 140-3</span>
+            <span class="badge-cert">NIST SP 800-53</span>
+            <span class="badge-cert">STANAG 4586</span>
+            <span class="badge-cert">DO-178C Level B</span>
+            <span class="badge-cert">SOC 2 Type II</span>
+            <span class="badge-cert">ISO 27001</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COL -->
+      <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+
+        <div class="card chart-card">
+          <div class="chart-head">
+            <div>
+              <div class="card-title">Mission throughput</div>
+              <div class="card-sub">last 24h · sliding window</div>
+            </div>
+            <div>
+              <div class="chart-big">217</div>
+              <div class="chart-sub" style="text-align:right"><span style="color:var(--green);font-weight:600">+12%</span> vs 24h ago</div>
+            </div>
+          </div>
+          <svg class="chart-svg" viewBox="0 0 380 110" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="rgba(99,102,241,0.4)"/>
+                <stop offset="100%" stop-color="rgba(99,102,241,0)"/>
+              </linearGradient>
+            </defs>
+            <path d="M0,80 L20,75 L40,68 L60,72 L80,55 L100,60 L120,42 L140,48 L160,30 L180,38 L200,24 L220,30 L240,18 L260,28 L280,16 L300,22 L320,12 L340,18 L360,8 L380,14 L380,110 L0,110 Z" fill="url(#cg)"/>
+            <path d="M0,80 L20,75 L40,68 L60,72 L80,55 L100,60 L120,42 L140,48 L160,30 L180,38 L200,24 L220,30 L240,18 L260,28 L280,16 L300,22 L320,12 L340,18 L360,8 L380,14" fill="none" stroke="#6366f1" stroke-width="1.5"/>
+            <line x1="0" y1="100" x2="380" y2="100" stroke="rgba(255,255,255,0.06)"/>
+            <line x1="0" y1="60" x2="380" y2="60" stroke="rgba(255,255,255,0.04)" stroke-dasharray="2 3"/>
+            <line x1="0" y1="20" x2="380" y2="20" stroke="rgba(255,255,255,0.04)" stroke-dasharray="2 3"/>
+          </svg>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Active missions</div>
+              <div class="card-sub">3 in progress · 1 queued</div>
+            </div>
+            <button class="tab-btn">View all</button>
+          </div>
+          <div class="activity">
+            <div class="activity-row">
+              <div class="ar-dot"></div>
+              <div>
+                <div class="ar-msg"><b>TSK-117-A</b> · ISR pass · grid K-7-04</div>
+                <div class="ar-meta">
+                  <span class="who">→ Raven-01</span>
+                  <span>62% · WP 2/4</span>
+                  <span>ETA 12:42</span>
+                </div>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="ar-dot"></div>
+              <div>
+                <div class="ar-msg"><b>TSK-117-B</b> · convoy overwatch</div>
+                <div class="ar-meta">
+                  <span class="who">→ Raven-02</span>
+                  <span>38% · WP 1/3</span>
+                  <span>ETA 28:15</span>
+                </div>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="ar-dot green"></div>
+              <div>
+                <div class="ar-msg"><b>TSK-117-C</b> · LIDAR survey · grid K-7-08</div>
+                <div class="ar-meta">
+                  <span class="who">→ Falcon-04</span>
+                  <span>81% · WP 3/4</span>
+                  <span>ETA 06:51</span>
+                </div>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="ar-dot amber"></div>
+              <div>
+                <div class="ar-msg"><b>TSK-117-D</b> · queued · awaiting clearance</div>
+                <div class="ar-meta">
+                  <span class="who">→ Shrike-05</span>
+                  <span>0% · pending</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Activity feed</div>
+              <div class="card-sub">audit-grade · signed</div>
+            </div>
+            <button class="tab-btn">Filter</button>
+          </div>
+          <div class="activity">
+            <div class="activity-row">
+              <div class="ar-dot red"></div>
+              <div>
+                <div class="ar-msg">Link loss on <b>Shrike-06</b> — auto-RTH initiated</div>
+                <div class="ar-meta"><span>18:23:47</span><span>last fix 091823.41Z</span></div>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="ar-dot amber"></div>
+              <div>
+                <div class="ar-msg"><b>Falcon-03</b> entered BINGO fuel · 22%</div>
+                <div class="ar-meta"><span>18:23:31</span><span>auto-RTB · ETA 04:12</span></div>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="ar-dot green"></div>
+              <div>
+                <div class="ar-msg">WP-2 reached on <b>Raven-01</b> · target acquired</div>
+                <div class="ar-meta"><span>18:23:18</span><span>EO/IR active</span></div>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="ar-dot green"></div>
+              <div>
+                <div class="ar-msg">LIDAR pass complete · 240k pts uploaded</div>
+                <div class="ar-meta"><span>18:22:55</span><span class="who">Falcon-04</span></div>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="ar-dot amber"></div>
+              <div>
+                <div class="ar-msg">Geofence proximity warning · KOZ 480m</div>
+                <div class="ar-meta"><span>18:22:40</span><span class="who">Raven-02</span></div>
+              </div>
+            </div>
+            <div class="activity-row">
+              <div class="ar-dot"></div>
+              <div>
+                <div class="ar-msg">Operator <b>M. Volk</b> authenticated · 2FA · session 0x7F2A</div>
+                <div class="ar-meta"><span>18:21:01</span><span>signed · audit log</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+</body>
+</html>

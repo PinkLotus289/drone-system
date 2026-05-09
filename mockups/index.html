@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sentinel · Design concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0d14;
+    --bg-1: #11151f;
+    --bg-2: #181d2a;
+    --line: rgba(255,255,255,0.08);
+    --line-strong: rgba(255,255,255,0.16);
+    --text: #e8ecf3;
+    --text-dim: #99a3b3;
+    --text-mute: #5c6878;
+    --accent: #6366f1;
+    --cyan: #00ffd1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.5 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  .wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 60px 32px 80px;
+  }
+
+  .head {
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 28px;
+    margin-bottom: 36px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 32px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .brand-mark {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 800; font-size: 18px;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.35);
+  }
+  .brand-name { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand-sub { font-size: 12px; color: var(--text-mute); }
+
+  .head-meta {
+    display: flex; gap: 14px; align-items: center;
+    font: 600 11px 'JetBrains Mono', monospace;
+    color: var(--text-mute);
+    letter-spacing: 0.08em;
+  }
+  .head-meta .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+
+  h1 {
+    font-size: 44px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin-bottom: 14px;
+  }
+  h1 .accent {
+    background: linear-gradient(120deg, #6366f1, #14b8a6);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .lede {
+    font-size: 17px;
+    color: var(--text-dim);
+    max-width: 720px;
+    line-height: 1.55;
+    margin-bottom: 36px;
+  }
+
+  .context {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 48px;
+  }
+  .ctx-card {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .ctx-l {
+    font: 700 10px 'Inter', sans-serif;
+    color: var(--text-mute);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .ctx-v { font-size: 17px; font-weight: 700; }
+  .ctx-v small { font-size: 12px; color: var(--text-dim); font-weight: 500; margin-left: 4px; }
+
+  .section-h {
+    font: 700 11px 'Inter', sans-serif;
+    color: var(--text-mute);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 20px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 22px;
+    margin-bottom: 56px;
+  }
+
+  .concept {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: transform .2s, border-color .2s, box-shadow .2s;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+  }
+  .concept:hover {
+    transform: translateY(-4px);
+    border-color: var(--line-strong);
+    box-shadow: 0 18px 40px -12px rgba(0,0,0,0.5);
+  }
+
+  .preview {
+    height: 200px;
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* Preview 1: Military */
+  .pv-mil {
+    background: #02060d;
+    background-image:
+      linear-gradient(rgba(0, 255, 209, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 255, 209, 0.06) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  .pv-mil::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(0,255,209,0.05), transparent 60%);
+  }
+
+  /* Preview 2: Enterprise */
+  .pv-ent {
+    background: linear-gradient(180deg, #14182a 0%, #0e1118 100%);
+  }
+  .pv-ent::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 30% 80%, rgba(99,102,241,0.18), transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba(20,184,166,0.12), transparent 60%);
+  }
+
+  /* Preview 3: Aerospace */
+  .pv-aer {
+    background: #f6f6f3;
+    background-image:
+      linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .pv-svg { width: 100%; height: 100%; position: relative; z-index: 1; }
+
+  .concept-body {
+    padding: 22px 24px 24px;
+    flex: 1;
+    display: flex; flex-direction: column;
+  }
+  .concept-tag {
+    font: 700 10px 'JetBrains Mono', monospace;
+    letter-spacing: 0.22em;
+    color: var(--text-mute);
+    margin-bottom: 8px;
+  }
+  .concept-tag.mil { color: #00ffd1; }
+  .concept-tag.ent { color: #818cf8; }
+  .concept-tag.aer { color: #94a3b8; }
+  .concept-title {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 8px;
+  }
+  .concept-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.55;
+    margin-bottom: 16px;
+  }
+
+  .traits {
+    display: flex; flex-direction: column; gap: 6px;
+    margin-bottom: 18px;
+  }
+  .trait {
+    display: grid; grid-template-columns: 100px 1fr;
+    gap: 12px;
+    font-size: 12px;
+  }
+  .trait .l {
+    font: 700 10px 'JetBrains Mono', monospace;
+    color: var(--text-mute);
+    letter-spacing: 0.06em;
+  }
+  .trait .v { color: var(--text); }
+
+  .features {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .features-h {
+    font: 700 10px 'Inter', sans-serif;
+    color: var(--text-mute);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .feat-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .feat {
+    font: 600 11px 'JetBrains Mono', monospace;
+    padding: 3px 9px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--text-dim);
+  }
+
+  .open-link {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 18px;
+    padding: 10px 14px;
+    background: var(--bg-2);
+    border-radius: 8px;
+    font: 600 13px 'Inter', sans-serif;
+    color: var(--text);
+    border: 1px solid var(--line);
+    transition: background .15s, border-color .15s;
+  }
+  .concept:hover .open-link { background: var(--accent); border-color: var(--accent); color: white; }
+
+  /* PROPOSED FEATURES SECTION */
+  .matrix {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  table.matrix-t {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  table.matrix-t th, table.matrix-t td {
+    text-align: left;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  table.matrix-t th {
+    font: 700 10px 'Inter', sans-serif;
+    color: var(--text-mute);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    background: var(--bg-2);
+  }
+  table.matrix-t td.area { font-weight: 600; }
+  table.matrix-t td.desc { color: var(--text-dim); font-size: 12px; }
+  .impact {
+    display: inline-flex; gap: 2px;
+  }
+  .impact-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+  }
+  .impact-dot.off { background: rgba(255,255,255,0.12); }
+  .effort {
+    display: inline-block;
+    font: 700 10px 'JetBrains Mono', monospace;
+    padding: 2px 8px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+  }
+  .effort.low { color: #10b981; border-color: rgba(16,185,129,0.3); }
+  .effort.mid { color: #f59e0b; border-color: rgba(245,158,11,0.3); }
+  .effort.high { color: #ef4444; border-color: rgba(239,68,68,0.3); }
+
+  .footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--text-mute);
+    font-size: 12px;
+    display: flex; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+  }
+
+  @media (max-width: 1000px) {
+    .grid { grid-template-columns: 1fr; }
+    .context { grid-template-columns: repeat(2, 1fr); }
+    h1 { font-size: 32px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="head">
+    <div class="brand">
+      <div class="brand-mark">S</div>
+      <div>
+        <div class="brand-name">Sentinel · Design concepts</div>
+        <div class="brand-sub">Mission Control redesign · investor-grade</div>
+      </div>
+    </div>
+    <div class="head-meta">
+      <span class="dot"></span>
+      <span>v0.1 · MOCKUPS · 09 MAY 2026</span>
+    </div>
+  </header>
+
+  <h1>Три направления редизайна — <span class="accent">для defense-инвестора</span></h1>
+  <p class="lede">
+    Каждый концепт — standalone HTML-макет главного экрана Mission Control с одинаковым набором defense-фич: swarm-управление флотом, no-fly зоны, EO/IR/LIDAR sensor feeds, mission timeline, encrypted datalink, audit-log с цифровой подписью, classification banner. Отличается визуальный язык и расстановка акцентов.
+  </p>
+
+  <div class="context">
+    <div class="ctx-card">
+      <div class="ctx-l">Audience</div>
+      <div class="ctx-v">Defense / GovTech</div>
+    </div>
+    <div class="ctx-card">
+      <div class="ctx-l">Stage</div>
+      <div class="ctx-v">Concept <small>· no code change</small></div>
+    </div>
+    <div class="ctx-card">
+      <div class="ctx-l">Concepts</div>
+      <div class="ctx-v">3 <small>· compare side-by-side</small></div>
+    </div>
+    <div class="ctx-card">
+      <div class="ctx-l">Next</div>
+      <div class="ctx-v">Pick 1 → integrate</div>
+    </div>
+  </div>
+
+  <div class="section-h">Концепты</div>
+
+  <div class="grid">
+
+    <!-- MOCKUP 1: MILITARY -->
+    <a class="concept" href="mockup_1_military.html" target="_blank">
+      <div class="preview pv-mil">
+        <svg class="pv-svg" viewBox="0 0 360 200" preserveAspectRatio="xMidYMid slice">
+          <circle cx="180" cy="100" r="80" fill="none" stroke="rgba(0,255,209,0.35)" stroke-width="0.6" stroke-dasharray="4 4"/>
+          <circle cx="180" cy="100" r="50" fill="none" stroke="rgba(0,255,209,0.2)" stroke-width="0.5" stroke-dasharray="3 3"/>
+          <circle cx="260" cy="60" r="36" fill="rgba(255,71,87,0.16)" stroke="rgba(255,71,87,0.5)" stroke-width="0.6" stroke-dasharray="2 2"/>
+          <polygon points="50,40 110,30 130,80 70,90" fill="rgba(255,176,32,0.08)" stroke="rgba(255,176,32,0.45)" stroke-width="0.6" stroke-dasharray="3 2"/>
+          <path d="M90,150 L130,120 L170,100 L210,80" stroke="rgba(0,255,209,0.6)" stroke-width="0.8" stroke-dasharray="3 2" fill="none"/>
+          <rect x="83" y="146" width="14" height="14" fill="rgba(0,255,209,0.18)" stroke="#00ffd1" stroke-width="1"/>
+          <polygon points="170,100 175,108 170,106 165,108" fill="#00ffd1"/>
+          <polygon points="135,120 140,128 135,126 130,128" fill="#00ffd1"/>
+          <polygon points="240,90 245,98 240,96 235,98" fill="#ff4757"/>
+          <text x="14" y="22" font-family="JetBrains Mono" font-size="9" fill="#00ffd1" font-weight="700">SENTINEL</text>
+          <text x="14" y="34" font-family="JetBrains Mono" font-size="7" fill="rgba(0,255,209,0.5)">UAS COMMAND // C2</text>
+          <text x="280" y="22" font-family="JetBrains Mono" font-size="8" fill="#ffb020" font-weight="700">091823Z</text>
+          <text x="280" y="33" font-family="JetBrains Mono" font-size="7" fill="rgba(255,176,32,0.6)">UNCLASSIFIED</text>
+          <line x1="0" y1="190" x2="360" y2="190" stroke="rgba(255,176,32,0.5)" stroke-width="2"/>
+          <text x="180" y="196" text-anchor="middle" font-family="Inter" font-size="6.5" font-weight="800" fill="#ffb020" letter-spacing="0.3em">UNCLASSIFIED // FOUO</text>
+        </svg>
+      </div>
+      <div class="concept-body">
+        <div class="concept-tag mil">CONCEPT 01</div>
+        <div class="concept-title">Military / Tactical Ops</div>
+        <div class="concept-desc">
+          Тёмный командный центр в стиле Anduril/SpaceX. Сетки, монохром+cyan/amber, classification banner, MGRS-координаты. Серьёзный «настоящий» вид для defense-аудитории.
+        </div>
+        <div class="traits">
+          <div class="trait"><span class="l">PALETTE</span><span class="v">#02060d · cyan #00ffd1 · amber #ffb020</span></div>
+          <div class="trait"><span class="l">TYPO</span><span class="v">Inter + JetBrains Mono · ALL CAPS · letter-spacing</span></div>
+          <div class="trait"><span class="l">VIBE</span><span class="v">Anduril Lattice, SpaceX Mission Control</span></div>
+        </div>
+        <div class="features">
+          <div class="features-h">Highlights</div>
+          <div class="feat-list">
+            <span class="feat">classification banner</span>
+            <span class="feat">MGRS / DTG</span>
+            <span class="feat">EO/IR/LIDAR feeds</span>
+            <span class="feat">PTT intercom</span>
+            <span class="feat">threat zones</span>
+            <span class="feat">AAR replay</span>
+          </div>
+        </div>
+        <div class="open-link">
+          <span>Открыть макет</span>
+          <span>→</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- MOCKUP 2: ENTERPRISE -->
+    <a class="concept" href="mockup_2_enterprise.html" target="_blank">
+      <div class="preview pv-ent">
+        <svg class="pv-svg" viewBox="0 0 360 200" preserveAspectRatio="xMidYMid slice">
+          <rect x="14" y="14" width="80" height="172" rx="6" fill="rgba(255,255,255,0.03)"/>
+          <circle cx="34" cy="34" r="6" fill="#6366f1"/>
+          <rect x="46" y="29" width="36" height="3" rx="1" fill="rgba(255,255,255,0.4)"/>
+          <rect x="46" y="36" width="22" height="2" rx="1" fill="rgba(255,255,255,0.18)"/>
+          <rect x="22" y="58" width="64" height="6" rx="2" fill="rgba(99,102,241,0.18)"/>
+          <rect x="22" y="70" width="50" height="3" rx="1" fill="rgba(255,255,255,0.18)"/>
+          <rect x="22" y="80" width="50" height="3" rx="1" fill="rgba(255,255,255,0.12)"/>
+          <rect x="22" y="90" width="50" height="3" rx="1" fill="rgba(255,255,255,0.12)"/>
+          <rect x="22" y="106" width="50" height="3" rx="1" fill="rgba(255,255,255,0.12)"/>
+
+          <rect x="104" y="14" width="120" height="50" rx="6" fill="rgba(99,102,241,0.1)" stroke="rgba(99,102,241,0.3)" stroke-width="0.5"/>
+          <rect x="116" y="22" width="14" height="14" rx="3" fill="rgba(99,102,241,0.3)"/>
+          <text x="116" y="50" font-family="JetBrains Mono" font-size="11" font-weight="700" fill="#fff">99.94%</text>
+          <text x="116" y="59" font-family="Inter" font-size="6" fill="rgba(255,255,255,0.5)">Mission uptime</text>
+
+          <rect x="232" y="14" width="114" height="50" rx="6" fill="rgba(20,184,166,0.1)" stroke="rgba(20,184,166,0.3)" stroke-width="0.5"/>
+          <text x="244" y="40" font-family="JetBrains Mono" font-size="11" font-weight="700" fill="#fff">04 / 06</text>
+          <text x="244" y="49" font-family="Inter" font-size="6" fill="rgba(255,255,255,0.5)">Active sorties</text>
+
+          <rect x="104" y="74" width="242" height="112" rx="6" fill="rgba(255,255,255,0.03)"/>
+          <ellipse cx="225" cy="130" rx="100" ry="40" fill="rgba(99,102,241,0.06)"/>
+          <path d="M150,160 L180,140 L220,120 L260,108 L290,94" stroke="rgba(99,102,241,0.7)" stroke-width="1" stroke-dasharray="3 2" fill="none"/>
+          <circle cx="150" cy="160" r="4" fill="#14b8a6"/>
+          <polygon points="220,120 224,128 220,126 216,128" fill="#6366f1"/>
+          <polygon points="260,108 264,116 260,114 256,116" fill="#6366f1"/>
+          <circle cx="290" cy="94" r="20" fill="rgba(239,68,68,0.18)" stroke="rgba(239,68,68,0.4)" stroke-width="0.5" stroke-dasharray="2 1"/>
+        </svg>
+      </div>
+      <div class="concept-body">
+        <div class="concept-tag ent">CONCEPT 02</div>
+        <div class="concept-title">Enterprise SaaS</div>
+        <div class="concept-desc">
+          Современный продуктовый дизайн в духе Linear / Vercel. Sidebar-навигация, KPI-карточки с спарклайнами, чистая типографика, charts. Подходит, если инвестор любит «scaling product».
+        </div>
+        <div class="traits">
+          <div class="trait"><span class="l">PALETTE</span><span class="v">#0b0d12 · indigo #6366f1 · teal #14b8a6</span></div>
+          <div class="trait"><span class="l">TYPO</span><span class="v">Inter · mixed case · soft weights</span></div>
+          <div class="trait"><span class="l">VIBE</span><span class="v">Linear, Vercel Dashboard, Datadog</span></div>
+        </div>
+        <div class="features">
+          <div class="features-h">Highlights</div>
+          <div class="feat-list">
+            <span class="feat">KPI cards + sparklines</span>
+            <span class="feat">throughput chart</span>
+            <span class="feat">fleet table</span>
+            <span class="feat">activity feed</span>
+            <span class="feat">compliance badges</span>
+            <span class="feat">command-K search</span>
+          </div>
+        </div>
+        <div class="open-link">
+          <span>Открыть макет</span>
+          <span>→</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- MOCKUP 3: AEROSPACE -->
+    <a class="concept" href="mockup_3_aerospace.html" target="_blank">
+      <div class="preview pv-aer">
+        <svg class="pv-svg" viewBox="0 0 360 200" preserveAspectRatio="xMidYMid slice">
+          <rect x="14" y="14" width="332" height="22" fill="white" stroke="#0a0e14" stroke-width="0.8"/>
+          <text x="22" y="29" font-family="Inter" font-size="9" font-weight="800" fill="#0a0e14" letter-spacing="0.08em">SENTINEL UAS</text>
+          <text x="100" y="29" font-family="IBM Plex Mono, JetBrains Mono" font-size="7" fill="#4b5563">DOC NO · SUAS-MC-24117 · REV B</text>
+          <text x="338" y="29" font-family="IBM Plex Mono, JetBrains Mono" font-size="8" fill="#0a0e14" font-weight="700" text-anchor="end">091823Z</text>
+
+          <rect x="40" y="50" width="280" height="124" fill="white" stroke="#0a0e14" stroke-width="1"/>
+          <text x="50" y="46" font-family="Inter" font-size="6.5" font-weight="700" fill="#0a0e14" letter-spacing="0.18em">FIG. 4.1 · TACTICAL OVERLAY</text>
+
+          <g stroke="#d8dde3" stroke-width="0.4">
+            <line x1="40" y1="80" x2="320" y2="80"/>
+            <line x1="40" y1="110" x2="320" y2="110"/>
+            <line x1="40" y1="140" x2="320" y2="140"/>
+            <line x1="100" y1="50" x2="100" y2="174"/>
+            <line x1="180" y1="50" x2="180" y2="174"/>
+            <line x1="260" y1="50" x2="260" y2="174"/>
+          </g>
+
+          <circle cx="180" cy="112" r="50" fill="none" stroke="#1d4ed8" stroke-width="0.5" stroke-dasharray="2 2"/>
+          <polygon points="58,154 60,158 58,157 56,158" fill="#0a0e14"/>
+          <rect x="55" y="151" width="6" height="6" fill="white" stroke="#0a0e14" stroke-width="0.6"/>
+          <path d="M58,154 L100,138 L150,118 L200,102 L240,90" stroke="#1d4ed8" stroke-width="0.8" fill="none"/>
+          <circle cx="100" cy="138" r="2" fill="white" stroke="#1d4ed8" stroke-width="0.7"/>
+          <circle cx="150" cy="118" r="2" fill="white" stroke="#1d4ed8" stroke-width="0.7"/>
+          <circle cx="200" cy="102" r="2" fill="white" stroke="#1d4ed8" stroke-width="0.7"/>
+          <rect x="237" y="87" width="6" height="6" fill="#1d4ed8"/>
+          <polygon points="180,112 184,120 180,118 176,120" fill="#1d4ed8"/>
+          <text x="186" y="110" font-family="Inter" font-size="6" font-weight="700" fill="#1d4ed8">RAVEN-01</text>
+
+          <circle cx="280" cy="78" r="22" fill="#fdf2f2" stroke="#b91c1c" stroke-width="0.6" stroke-dasharray="2 1.5"/>
+          <line x1="276" y1="74" x2="284" y2="82" stroke="#b91c1c" stroke-width="0.8"/>
+          <line x1="276" y1="82" x2="284" y2="74" stroke="#b91c1c" stroke-width="0.8"/>
+
+          <polygon points="62,68 110,62 124,90 78,98" fill="#fef7e8" stroke="#b45309" stroke-width="0.6" stroke-dasharray="2 1.5"/>
+
+          <line x1="40" y1="184" x2="320" y2="184" stroke="#0a0e14" stroke-width="0.5"/>
+          <text x="46" y="193" font-family="IBM Plex Mono, JetBrains Mono" font-size="5.5" fill="#4b5563" letter-spacing="0.1em">UTM 37N · WGS-84 · GRID 100m</text>
+          <text x="316" y="193" text-anchor="end" font-family="IBM Plex Mono, JetBrains Mono" font-size="5.5" fill="#4b5563" letter-spacing="0.1em">UNCLASSIFIED // FOUO</text>
+        </svg>
+      </div>
+      <div class="concept-body">
+        <div class="concept-tag aer">CONCEPT 03</div>
+        <div class="concept-title">Aerospace / Engineering Doc</div>
+        <div class="concept-desc">
+          Светлая инженерная эстетика в духе NASA/Boeing technical drawing. Doc № / Rev, тонкие линии, рамки рисунков, callouts, табличные данные. Внушает «у нас сертифицируемая система».
+        </div>
+        <div class="traits">
+          <div class="trait"><span class="l">PALETTE</span><span class="v">#f6f6f3 · ink #0a0e14 · blue #1d4ed8</span></div>
+          <div class="trait"><span class="l">TYPO</span><span class="v">IBM Plex Sans + Mono · documental</span></div>
+          <div class="trait"><span class="l">VIBE</span><span class="v">NASA tech docs, Boeing 737 manuals</span></div>
+        </div>
+        <div class="features">
+          <div class="features-h">Highlights</div>
+          <div class="feat-list">
+            <span class="feat">DOC NO / REV</span>
+            <span class="feat">airframe schematic</span>
+            <span class="feat">FIG callouts</span>
+            <span class="feat">UTM grid</span>
+            <span class="feat">cert pills</span>
+            <span class="feat">Gantt timeline</span>
+          </div>
+        </div>
+        <div class="open-link">
+          <span>Открыть макет</span>
+          <span>→</span>
+        </div>
+      </div>
+    </a>
+
+  </div>
+
+  <div class="section-h">Defense-фичи в каждом макете</div>
+
+  <div class="matrix">
+    <table class="matrix-t">
+      <thead>
+        <tr>
+          <th style="width:200px">Feature</th>
+          <th>Что это и зачем инвестору</th>
+          <th style="width:130px">Investor impact</th>
+          <th style="width:90px">Effort</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="area">Classification banner</td>
+          <td class="desc">UNCLASSIFIED//FOUO ribbons сверху и снизу — мгновенный сигнал «мы знаем язык defense».</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort low">low</span></td>
+        </tr>
+        <tr>
+          <td class="area">Swarm / multi-UAS</td>
+          <td class="desc">Управление флотом из 6+ дронов одновременно, не один-к-одному. Roster со статусами, swarm formations на карте.</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span></span></td>
+          <td><span class="effort high">high</span></td>
+        </tr>
+        <tr>
+          <td class="area">No-fly / KOZ зоны</td>
+          <td class="desc">Полигоны на карте + auto-geofence в коде. Closed-loop защита от случайного нарушения civil ATC / friendly territory.</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort mid">mid</span></td>
+        </tr>
+        <tr>
+          <td class="area">Threat overlay</td>
+          <td class="desc">SAM/радар-зоны, классификация по confidence + источник (SIGINT, ISR). Intel ↔ ops layer.</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort mid">mid</span></td>
+        </tr>
+        <tr>
+          <td class="area">EO / IR / LIDAR feeds</td>
+          <td class="desc">Sensor strip с превью камер. Даже placeholder показывает «у нас payload integration», а не просто доставка.</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span></span></td>
+          <td><span class="effort high">high</span></td>
+        </tr>
+        <tr>
+          <td class="area">Encrypted datalink</td>
+          <td class="desc">AES-256 / SAT backup statuses в шапке. Сигнал: «мы понимаем comms security», не просто WiFi-радио.</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort mid">mid</span></td>
+        </tr>
+        <tr>
+          <td class="area">Black box / AAR</td>
+          <td class="desc">Сигнатурный лог событий (SHA-256) + replay scrubber. After-Action Report экспорт. Compliance-ready.</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort mid">mid</span></td>
+        </tr>
+        <tr>
+          <td class="area">Auto-RTH / failsafes</td>
+          <td class="desc">При link loss / BINGO fuel — автоматический возврат с visible alert ribbon. Показывает «безопасно даже когда что-то идёт не так».</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort low">low</span></td>
+        </tr>
+        <tr>
+          <td class="area">PTT / intercom</td>
+          <td class="desc">Кнопки голосовой связи с каждым бортом. Пехотный/пилотский UX-vocab — не commercial drone.</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort high">high</span></td>
+        </tr>
+        <tr>
+          <td class="area">Compliance badges</td>
+          <td class="desc">FIPS 140-3, NIST 800-53, STANAG 4586/4609, DO-178C. Даже если в roadmap — показывают намерение пройти сертификацию.</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort low">low</span></td>
+        </tr>
+        <tr>
+          <td class="area">2FA / cleared operator</td>
+          <td class="desc">Имя оператора, clearance level, session ID — «мы знаем что такое доступ по уровням и audit trail».</td>
+          <td><span class="impact"><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot"></span><span class="impact-dot off"></span><span class="impact-dot off"></span></span></td>
+          <td><span class="effort mid">mid</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span>Sentinel UAS · design concepts · v0.1</span>
+    <span class="mono">Generated 2026-05-09</span>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SENTINEL // Mission Control · Military</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg-0: #02060d;
+    --bg-1: #060c17;
+    --bg-2: #0a1322;
+    --bg-3: #101b30;
+    --grid: rgba(0, 255, 209, 0.04);
+    --line: rgba(0, 255, 209, 0.18);
+    --line-strong: rgba(0, 255, 209, 0.45);
+    --text: #e6f0ff;
+    --text-dim: #8aa0bd;
+    --text-mute: #4f627d;
+    --cyan: #00ffd1;
+    --cyan-soft: rgba(0, 255, 209, 0.14);
+    --amber: #ffb020;
+    --amber-soft: rgba(255, 176, 32, 0.12);
+    --red: #ff4757;
+    --red-soft: rgba(255, 71, 87, 0.16);
+    --green: #2ee36b;
+    --blue: #4aa6ff;
+    --classification: #ffb020;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg-0); color: var(--text);
+    font: 13px/1.4 'Inter', system-ui, sans-serif;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; font-feature-settings: 'tnum' 1; }
+  body { display: flex; flex-direction: column; }
+
+  /* CLASSIFICATION BANNER */
+  .classification {
+    flex: 0 0 22px;
+    background: var(--classification);
+    color: #1a0e00;
+    font: 800 11px/22px 'Inter', sans-serif;
+    letter-spacing: 0.4em;
+    text-align: center;
+    text-transform: uppercase;
+  }
+  .classification.top { border-bottom: 1px solid rgba(0,0,0,0.4); }
+  .classification.bot { border-top: 1px solid rgba(0,0,0,0.4); }
+
+  /* TOP COMMAND BAR */
+  .topbar {
+    flex: 0 0 64px;
+    display: grid;
+    grid-template-columns: 280px 1fr auto auto auto;
+    gap: 0;
+    background: var(--bg-1);
+    border-bottom: 1px solid var(--line);
+    align-items: stretch;
+  }
+  .brand-block {
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 18px;
+    border-right: 1px solid var(--line);
+    background: linear-gradient(135deg, var(--bg-2), transparent);
+  }
+  .brand-mark {
+    width: 36px; height: 36px;
+    border: 1.5px solid var(--cyan);
+    color: var(--cyan);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .brand-mark::before, .brand-mark::after {
+    content: ''; position: absolute;
+    width: 6px; height: 6px;
+    border: 1.5px solid var(--cyan);
+  }
+  .brand-mark::before { top: -3px; left: -3px; border-right: 0; border-bottom: 0; }
+  .brand-mark::after { bottom: -3px; right: -3px; border-left: 0; border-top: 0; }
+  .brand-name { font-weight: 800; font-size: 16px; letter-spacing: 0.18em; color: var(--cyan); }
+  .brand-sub { font-size: 9px; color: var(--text-mute); letter-spacing: 0.3em; font-weight: 600; }
+
+  .mission-strip {
+    display: flex; align-items: center; gap: 28px;
+    padding: 0 22px;
+    border-right: 1px solid var(--line);
+  }
+  .ms-block { display: flex; flex-direction: column; gap: 2px; }
+  .ms-label { font-size: 9px; color: var(--text-mute); letter-spacing: 0.24em; font-weight: 700; }
+  .ms-value { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: 0.06em; }
+  .ms-value.cyan { color: var(--cyan); }
+  .ms-value.amber { color: var(--amber); }
+  .ms-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--cyan-soft);
+    color: var(--cyan);
+    border: 1px solid var(--line);
+    font: 700 9px 'JetBrains Mono', monospace;
+    letter-spacing: 0.2em;
+    margin-right: 6px;
+  }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(80px, auto));
+    align-items: center;
+    border-right: 1px solid var(--line);
+  }
+  .kpi {
+    padding: 0 18px;
+    height: 100%;
+    display: flex; flex-direction: column; justify-content: center;
+    border-right: 1px dashed var(--line);
+  }
+  .kpi:last-child { border-right: 0; }
+  .kpi-label { font-size: 9px; color: var(--text-mute); letter-spacing: 0.22em; font-weight: 700; }
+  .kpi-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 18px; color: var(--cyan); margin-top: 1px; }
+  .kpi-value.amber { color: var(--amber); }
+  .kpi-value.red { color: var(--red); }
+  .kpi-trend { font-size: 9px; color: var(--green); font-family: 'JetBrains Mono', monospace; }
+
+  .clock-block {
+    padding: 0 22px;
+    display: flex; flex-direction: column; justify-content: center;
+    align-items: flex-end;
+  }
+  .clock-utc { font: 700 18px 'JetBrains Mono', monospace; color: var(--text); letter-spacing: 0.04em; }
+  .clock-meta { font-size: 9px; color: var(--text-mute); letter-spacing: 0.18em; margin-top: 2px; }
+  .clock-zulu { color: var(--cyan); font-weight: 700; }
+
+  /* MAIN APP */
+  .app {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 320px 1fr 380px;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* LEFT — FLEET */
+  .pane { display: flex; flex-direction: column; overflow: hidden; min-height: 0; background: var(--bg-1); }
+  .pane.left { border-right: 1px solid var(--line); }
+  .pane.right { border-left: 1px solid var(--line); }
+
+  .pane-head {
+    flex: 0 0 40px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-2);
+  }
+  .pane-head-title {
+    font-size: 10px; letter-spacing: 0.3em; font-weight: 800;
+    color: var(--text-dim); display: flex; align-items: center; gap: 8px;
+  }
+  .pane-head-title::before {
+    content: ''; width: 8px; height: 8px;
+    background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
+  }
+  .pane-head-meta { font: 700 10px 'JetBrains Mono', monospace; color: var(--cyan); }
+
+  .scroll { flex: 1; overflow-y: auto; padding: 10px 10px 16px; }
+
+  .unit-card {
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+    padding: 12px;
+    margin-bottom: 8px;
+    position: relative;
+    cursor: pointer;
+  }
+  .unit-card.selected {
+    border-color: var(--cyan);
+    box-shadow: inset 0 0 0 1px var(--cyan-soft), 0 0 0 1px var(--cyan-soft);
+  }
+  .unit-card.selected::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--cyan);
+  }
+  .unit-card.warn { border-color: rgba(255, 176, 32, 0.35); }
+  .unit-card.warn::before { background: var(--amber); }
+  .unit-card.crit { border-color: rgba(255, 71, 87, 0.4); }
+  .unit-card.crit::before { background: var(--red); }
+
+  .unit-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .unit-callsign {
+    font: 700 14px 'JetBrains Mono', monospace;
+    color: var(--text); letter-spacing: 0.08em;
+  }
+  .unit-id { font: 600 9px 'JetBrains Mono', monospace; color: var(--text-mute); letter-spacing: 0.18em; }
+  .unit-state {
+    font: 700 9px 'JetBrains Mono', monospace;
+    letter-spacing: 0.22em;
+    padding: 2px 7px;
+    border: 1px solid currentColor;
+    background: rgba(0, 255, 209, 0.06);
+    color: var(--cyan);
+  }
+  .unit-state.warn { color: var(--amber); background: var(--amber-soft); }
+  .unit-state.crit { color: var(--red); background: var(--red-soft); }
+  .unit-state.idle { color: var(--text-dim); background: rgba(138, 160, 189, 0.08); }
+
+  .unit-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    margin-bottom: 10px;
+  }
+  .unit-stat { display: flex; flex-direction: column; }
+  .stat-l { font-size: 8px; color: var(--text-mute); letter-spacing: 0.18em; font-weight: 700; }
+  .stat-v { font: 600 12px 'JetBrains Mono', monospace; color: var(--text); margin-top: 2px; }
+  .stat-v.amber { color: var(--amber); }
+  .stat-v.red { color: var(--red); }
+  .stat-v.cyan { color: var(--cyan); }
+
+  .unit-bars { display: flex; flex-direction: column; gap: 4px; }
+  .bar-row {
+    display: grid; grid-template-columns: 36px 1fr 32px;
+    align-items: center; gap: 8px;
+    font: 600 9px 'JetBrains Mono', monospace;
+  }
+  .bar-row .l { color: var(--text-mute); letter-spacing: 0.16em; }
+  .bar-row .v { color: var(--text); text-align: right; }
+  .bar-track {
+    height: 4px; background: rgba(255, 255, 255, 0.05);
+    position: relative; overflow: hidden;
+  }
+  .bar-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: linear-gradient(90deg, var(--cyan), #4dffe2);
+    box-shadow: 0 0 6px var(--cyan-soft);
+  }
+  .bar-fill.amber { background: linear-gradient(90deg, var(--amber), #ffd47a); }
+  .bar-fill.red { background: linear-gradient(90deg, var(--red), #ff8a94); }
+
+  /* CENTER — TACTICAL MAP */
+  .map-wrap { position: relative; overflow: hidden; background: radial-gradient(circle at 50% 40%, #061021 0%, #02060d 70%); }
+
+  .map-svg { width: 100%; height: 100%; }
+
+  /* HUD overlays on map */
+  .hud {
+    position: absolute;
+    background: rgba(6, 12, 23, 0.86);
+    border: 1px solid var(--line);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .hud-corner {
+    position: absolute; width: 18px; height: 18px;
+    border: 1.5px solid var(--cyan);
+  }
+  .hud-corner.tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; }
+  .hud-corner.tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; }
+  .hud-corner.bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; }
+  .hud-corner.br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; }
+
+  .hud-aor {
+    top: 18px; left: 18px;
+    padding: 10px 14px;
+    min-width: 200px;
+  }
+  .hud-aor .l { font: 700 9px 'JetBrains Mono', monospace; color: var(--text-mute); letter-spacing: 0.24em; }
+  .hud-aor .v { font: 700 13px 'JetBrains Mono', monospace; color: var(--cyan); letter-spacing: 0.06em; margin-top: 3px; }
+  .hud-aor .row { display: flex; justify-content: space-between; gap: 18px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .hud-aor .row .v { font-size: 11px; color: var(--text); }
+
+  .hud-compass {
+    top: 18px; right: 18px;
+    width: 110px; height: 110px;
+    border-radius: 50%;
+    border: 1px solid var(--line-strong);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .hud-compass::before {
+    content: 'N'; position: absolute; top: 4px;
+    font: 700 11px 'JetBrains Mono', monospace; color: var(--cyan);
+  }
+  .hud-compass::after {
+    content: 'S'; position: absolute; bottom: 4px;
+    font: 700 11px 'JetBrains Mono', monospace; color: var(--text-mute);
+  }
+  .compass-readout { text-align: center; }
+  .compass-readout .v { font: 700 18px 'JetBrains Mono', monospace; color: var(--text); }
+  .compass-readout .l { font: 700 8px 'JetBrains Mono', monospace; color: var(--text-mute); letter-spacing: 0.24em; }
+
+  .hud-tools {
+    bottom: 18px; right: 18px;
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 6px;
+  }
+  .tool-btn {
+    width: 38px; height: 38px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font: 700 14px 'JetBrains Mono', monospace;
+    letter-spacing: 0;
+  }
+  .tool-btn.active { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-soft); }
+  .tool-btn:hover { color: var(--cyan); }
+
+  .hud-replay {
+    bottom: 18px; left: 50%; transform: translateX(-50%);
+    padding: 10px 14px;
+    display: flex; align-items: center; gap: 12px;
+    min-width: 460px;
+  }
+  .replay-btn {
+    width: 32px; height: 32px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+  }
+  .replay-btn.primary { background: var(--cyan); color: var(--bg-0); border-color: var(--cyan); }
+  .replay-track {
+    flex: 1; height: 4px; background: rgba(255, 255, 255, 0.06);
+    position: relative;
+  }
+  .replay-pos {
+    position: absolute; left: 38%; top: -3px;
+    width: 10px; height: 10px;
+    background: var(--cyan); border: 2px solid var(--bg-0);
+  }
+  .replay-fill {
+    position: absolute; left: 0; top: 0; height: 100%; width: 38%;
+    background: var(--cyan);
+  }
+  .replay-time { font: 700 11px 'JetBrains Mono', monospace; color: var(--cyan); }
+  .replay-mode {
+    font: 700 9px 'JetBrains Mono', monospace; letter-spacing: 0.22em;
+    color: var(--text-mute); padding-left: 12px; border-left: 1px solid var(--line);
+  }
+
+  .hud-sensor-strip {
+    position: absolute; left: 18px; bottom: 18px;
+    display: flex; gap: 8px;
+  }
+  .sensor-card {
+    width: 168px; height: 110px;
+    background: #000;
+    border: 1px solid var(--line);
+    position: relative;
+    overflow: hidden;
+  }
+  .sensor-card.eo {
+    background:
+      radial-gradient(ellipse at 30% 60%, rgba(80, 110, 80, 0.5), transparent 60%),
+      linear-gradient(180deg, #1a2615 0%, #0a1408 100%);
+  }
+  .sensor-card.ir {
+    background:
+      radial-gradient(circle at 60% 50%, rgba(255, 100, 50, 0.6), transparent 35%),
+      radial-gradient(circle at 30% 70%, rgba(255, 200, 80, 0.45), transparent 30%),
+      linear-gradient(180deg, #1a0a18 0%, #2a1428 100%);
+  }
+  .sensor-card.lidar {
+    background:
+      radial-gradient(circle at 50% 50%, rgba(0, 200, 200, 0.4), transparent 50%),
+      linear-gradient(180deg, #0a1a25 0%, #021015 100%);
+    background-image:
+      linear-gradient(rgba(0, 255, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 255, 255, 0.06) 1px, transparent 1px),
+      radial-gradient(circle at 50% 50%, rgba(0, 200, 200, 0.4), transparent 50%);
+    background-size: 12px 12px, 12px 12px, 100% 100%;
+  }
+  .sensor-card .sc-tag {
+    position: absolute; top: 6px; left: 6px;
+    padding: 1px 6px;
+    background: rgba(0, 0, 0, 0.65);
+    color: var(--cyan);
+    font: 700 9px 'JetBrains Mono', monospace;
+    letter-spacing: 0.18em;
+    border: 1px solid var(--line);
+  }
+  .sensor-card .sc-meta {
+    position: absolute; bottom: 6px; left: 6px; right: 6px;
+    display: flex; justify-content: space-between;
+    font: 700 9px 'JetBrains Mono', monospace;
+    color: var(--text);
+  }
+  .sensor-card .sc-rec {
+    position: absolute; top: 6px; right: 6px;
+    color: var(--red); font: 700 9px 'JetBrains Mono', monospace;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .sensor-card .sc-rec::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--red); animation: blink 1s infinite;
+  }
+  .sensor-card .sc-target {
+    position: absolute; left: 60%; top: 45%;
+    width: 38px; height: 38px;
+    border: 1px solid var(--cyan);
+    transform: translate(-50%, -50%);
+  }
+  .sensor-card .sc-target::before, .sensor-card .sc-target::after {
+    content: ''; position: absolute;
+    background: var(--cyan);
+  }
+  .sensor-card .sc-target::before { left: 50%; top: -8px; bottom: -8px; width: 1px; transform: translateX(-50%); }
+  .sensor-card .sc-target::after { top: 50%; left: -8px; right: -8px; height: 1px; transform: translateY(-50%); }
+  @keyframes blink { 50% { opacity: 0.2; } }
+
+  /* RIGHT — MISSIONS / COMMS / EVENTS */
+  .section-head {
+    flex: 0 0 36px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+    background: var(--bg-2);
+    font: 700 10px 'JetBrains Mono', monospace;
+    letter-spacing: 0.28em;
+    color: var(--text-dim);
+  }
+  .section-head:first-of-type { border-top: 0; }
+  .section-head .sh-meta { color: var(--cyan); font-size: 11px; }
+
+  .missions { padding: 8px 8px 4px; max-height: 240px; overflow-y: auto; }
+  .mission {
+    border: 1px solid var(--line);
+    padding: 10px;
+    margin-bottom: 6px;
+    background: var(--bg-2);
+  }
+  .mission-row1 {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .mission-id { font: 700 11px 'JetBrains Mono', monospace; color: var(--cyan); letter-spacing: 0.08em; }
+  .mission-asg { font: 600 10px 'JetBrains Mono', monospace; color: var(--text); }
+  .mission-prog {
+    height: 3px; background: rgba(255, 255, 255, 0.06); margin: 6px 0;
+    position: relative;
+  }
+  .mission-prog .f { position: absolute; left: 0; top: 0; bottom: 0; background: var(--cyan); box-shadow: 0 0 4px var(--cyan); }
+  .mission-row2 { display: flex; justify-content: space-between; font: 600 9px 'JetBrains Mono', monospace; color: var(--text-mute); }
+  .mission-row2 .v { color: var(--text); }
+
+  .comms { padding: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .ptt {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    font: 700 10px 'JetBrains Mono', monospace;
+    letter-spacing: 0.18em;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .ptt::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+  }
+  .ptt.amber::before { background: var(--amber); }
+  .ptt.red::before { background: var(--red); }
+
+  .events { flex: 1; overflow-y: auto; padding: 6px 12px 10px; min-height: 0; font-size: 10.5px; line-height: 1.55; }
+  .ev {
+    display: grid;
+    grid-template-columns: 64px 56px 1fr;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.04);
+  }
+  .ev:last-child { border-bottom: 0; }
+  .ev .ts { font: 600 10px 'JetBrains Mono', monospace; color: var(--text-mute); }
+  .ev .src { font: 700 10px 'JetBrains Mono', monospace; color: var(--cyan); letter-spacing: 0.06em; }
+  .ev .msg { color: var(--text); }
+  .ev.warn .msg { color: var(--amber); }
+  .ev.warn .src { color: var(--amber); }
+  .ev.crit .msg { color: var(--red); }
+  .ev.crit .src { color: var(--red); }
+  .ev.crit { background: rgba(255, 71, 87, 0.05); }
+  .ev.ok .msg { color: var(--green); }
+
+  /* alert ribbon */
+  .alert-ribbon {
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+    background: rgba(255, 71, 87, 0.16);
+    border: 1px solid var(--red);
+    padding: 7px 18px;
+    font: 700 11px 'JetBrains Mono', monospace;
+    color: var(--red);
+    letter-spacing: 0.18em;
+    display: flex; align-items: center; gap: 10px;
+    animation: ribbon-pulse 1.5s infinite;
+  }
+  @keyframes ribbon-pulse { 50% { box-shadow: 0 0 0 6px rgba(255, 71, 87, 0); } 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.45); } }
+  .alert-ribbon::before { content: '▲'; font-size: 13px; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(0, 255, 209, 0.18); }
+
+  .legend-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font: 600 9px 'JetBrains Mono', monospace; letter-spacing: 0.14em; color: var(--text-dim); }
+  .legend-row .lg { width: 8px; height: 8px; flex-shrink: 0; }
+
+  .pane-foot {
+    border-top: 1px solid var(--line);
+    padding: 10px 14px;
+    background: var(--bg-2);
+    font: 600 9px 'JetBrains Mono', monospace;
+    color: var(--text-mute); letter-spacing: 0.14em;
+  }
+  .pane-foot .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .pane-foot .v { color: var(--text); font-weight: 700; }
+  .pane-foot .v.green { color: var(--green); }
+  .pane-foot .v.amber { color: var(--amber); }
+</style>
+</head>
+<body>
+
+<div class="classification top">UNCLASSIFIED // FOR OFFICIAL USE ONLY // DRONE OPS DEMO</div>
+
+<header class="topbar">
+  <div class="brand-block">
+    <div class="brand-mark">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <path d="M2 12 L12 2 L22 12 L12 22 Z" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">SENTINEL</div>
+      <div class="brand-sub">UAS COMMAND // C2</div>
+    </div>
+  </div>
+
+  <div class="mission-strip">
+    <div class="ms-block">
+      <div class="ms-label">OPERATION</div>
+      <div class="ms-value">
+        <span class="ms-tag">OP</span>NIGHT-OWL · 24-117
+      </div>
+    </div>
+    <div class="ms-block">
+      <div class="ms-label">AOR</div>
+      <div class="ms-value cyan">SECTOR K-7</div>
+    </div>
+    <div class="ms-block">
+      <div class="ms-label">DTG</div>
+      <div class="ms-value mono">091823Z MAY26</div>
+    </div>
+    <div class="ms-block">
+      <div class="ms-label">REL</div>
+      <div class="ms-value amber">FVEY</div>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-label">FLEET</div>
+      <div class="kpi-value">06 / 08</div>
+      <div class="kpi-trend">+2 ARMED</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">AIRBORNE</div>
+      <div class="kpi-value">04</div>
+      <div class="kpi-trend">2 RTB</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">MISSIONS</div>
+      <div class="kpi-value">12 / 14</div>
+      <div class="kpi-trend">86% OK</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">LINK</div>
+      <div class="kpi-value amber">AES-256</div>
+      <div class="kpi-trend" style="color:var(--amber)">SAT-2 BACKUP</div>
+    </div>
+  </div>
+
+  <div class="clock-block">
+    <div class="clock-utc mono">18:23:47</div>
+    <div class="clock-meta"><span class="clock-zulu">ZULU</span> · GPS LOCKED · 24SAT</div>
+  </div>
+</header>
+
+<main class="app">
+
+  <!-- LEFT: FLEET -->
+  <aside class="pane left">
+    <div class="pane-head">
+      <div class="pane-head-title">FLEET ROSTER</div>
+      <div class="pane-head-meta">06 / 08 ACTIVE</div>
+    </div>
+    <div class="scroll">
+
+      <div class="unit-card selected">
+        <div class="unit-head">
+          <div>
+            <div class="unit-callsign">RAVEN-01</div>
+            <div class="unit-id">UAS-NX7-014 · MQ-CLASS-II</div>
+          </div>
+          <div class="unit-state">ON-MISSION</div>
+        </div>
+        <div class="unit-grid">
+          <div class="unit-stat"><div class="stat-l">ALT</div><div class="stat-v cyan">142 m</div></div>
+          <div class="unit-stat"><div class="stat-l">SPD</div><div class="stat-v">14.2 m/s</div></div>
+          <div class="unit-stat"><div class="stat-l">HDG</div><div class="stat-v">087°</div></div>
+        </div>
+        <div class="unit-bars">
+          <div class="bar-row"><span class="l">BATT</span><div class="bar-track"><div class="bar-fill" style="width:78%"></div></div><span class="v">78%</span></div>
+          <div class="bar-row"><span class="l">LINK</span><div class="bar-track"><div class="bar-fill" style="width:92%"></div></div><span class="v">92%</span></div>
+          <div class="bar-row"><span class="l">PYLD</span><div class="bar-track"><div class="bar-fill amber" style="width:60%"></div></div><span class="v">2.4kg</span></div>
+        </div>
+      </div>
+
+      <div class="unit-card">
+        <div class="unit-head">
+          <div>
+            <div class="unit-callsign">RAVEN-02</div>
+            <div class="unit-id">UAS-NX7-015 · MQ-CLASS-II</div>
+          </div>
+          <div class="unit-state">ON-MISSION</div>
+        </div>
+        <div class="unit-grid">
+          <div class="unit-stat"><div class="stat-l">ALT</div><div class="stat-v cyan">156 m</div></div>
+          <div class="unit-stat"><div class="stat-l">SPD</div><div class="stat-v">15.8 m/s</div></div>
+          <div class="unit-stat"><div class="stat-l">HDG</div><div class="stat-v">092°</div></div>
+        </div>
+        <div class="unit-bars">
+          <div class="bar-row"><span class="l">BATT</span><div class="bar-track"><div class="bar-fill" style="width:64%"></div></div><span class="v">64%</span></div>
+          <div class="bar-row"><span class="l">LINK</span><div class="bar-track"><div class="bar-fill" style="width:88%"></div></div><span class="v">88%</span></div>
+          <div class="bar-row"><span class="l">PYLD</span><div class="bar-track"><div class="bar-fill amber" style="width:48%"></div></div><span class="v">1.9kg</span></div>
+        </div>
+      </div>
+
+      <div class="unit-card warn">
+        <div class="unit-head">
+          <div>
+            <div class="unit-callsign">FALCON-03</div>
+            <div class="unit-id">UAS-NX5-022 · RECON</div>
+          </div>
+          <div class="unit-state warn">RTB · LOW</div>
+        </div>
+        <div class="unit-grid">
+          <div class="unit-stat"><div class="stat-l">ALT</div><div class="stat-v">78 m</div></div>
+          <div class="unit-stat"><div class="stat-l">SPD</div><div class="stat-v">12.1 m/s</div></div>
+          <div class="unit-stat"><div class="stat-l">HDG</div><div class="stat-v">271°</div></div>
+        </div>
+        <div class="unit-bars">
+          <div class="bar-row"><span class="l">BATT</span><div class="bar-track"><div class="bar-fill amber" style="width:22%"></div></div><span class="v" style="color:var(--amber)">22%</span></div>
+          <div class="bar-row"><span class="l">LINK</span><div class="bar-track"><div class="bar-fill" style="width:75%"></div></div><span class="v">75%</span></div>
+          <div class="bar-row"><span class="l">ETA</span><div class="bar-track"><div class="bar-fill" style="width:35%"></div></div><span class="v">04:12</span></div>
+        </div>
+      </div>
+
+      <div class="unit-card">
+        <div class="unit-head">
+          <div>
+            <div class="unit-callsign">FALCON-04</div>
+            <div class="unit-id">UAS-NX5-023 · RECON</div>
+          </div>
+          <div class="unit-state">ON-MISSION</div>
+        </div>
+        <div class="unit-grid">
+          <div class="unit-stat"><div class="stat-l">ALT</div><div class="stat-v cyan">210 m</div></div>
+          <div class="unit-stat"><div class="stat-l">SPD</div><div class="stat-v">18.4 m/s</div></div>
+          <div class="unit-stat"><div class="stat-l">HDG</div><div class="stat-v">144°</div></div>
+        </div>
+        <div class="unit-bars">
+          <div class="bar-row"><span class="l">BATT</span><div class="bar-track"><div class="bar-fill" style="width:71%"></div></div><span class="v">71%</span></div>
+          <div class="bar-row"><span class="l">LINK</span><div class="bar-track"><div class="bar-fill" style="width:81%"></div></div><span class="v">81%</span></div>
+          <div class="bar-row"><span class="l">PYLD</span><div class="bar-track"><div class="bar-fill amber" style="width:32%"></div></div><span class="v">1.3kg</span></div>
+        </div>
+      </div>
+
+      <div class="unit-card">
+        <div class="unit-head">
+          <div>
+            <div class="unit-callsign">SHRIKE-05</div>
+            <div class="unit-id">UAS-NX9-007 · LOGI</div>
+          </div>
+          <div class="unit-state idle">STANDBY</div>
+        </div>
+        <div class="unit-grid">
+          <div class="unit-stat"><div class="stat-l">ALT</div><div class="stat-v">— m</div></div>
+          <div class="unit-stat"><div class="stat-l">SPD</div><div class="stat-v">— m/s</div></div>
+          <div class="unit-stat"><div class="stat-l">HDG</div><div class="stat-v">— °</div></div>
+        </div>
+        <div class="unit-bars">
+          <div class="bar-row"><span class="l">BATT</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="v">100%</span></div>
+          <div class="bar-row"><span class="l">LINK</span><div class="bar-track"><div class="bar-fill" style="width:99%"></div></div><span class="v">99%</span></div>
+          <div class="bar-row"><span class="l">PYLD</span><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div><span class="v">0.0kg</span></div>
+        </div>
+      </div>
+
+      <div class="unit-card crit">
+        <div class="unit-head">
+          <div>
+            <div class="unit-callsign">SHRIKE-06</div>
+            <div class="unit-id">UAS-NX9-008 · LOGI</div>
+          </div>
+          <div class="unit-state crit">LINK LOSS</div>
+        </div>
+        <div class="unit-grid">
+          <div class="unit-stat"><div class="stat-l">ALT</div><div class="stat-v">95 m</div></div>
+          <div class="unit-stat"><div class="stat-l">SPD</div><div class="stat-v">8.0 m/s</div></div>
+          <div class="unit-stat"><div class="stat-l">HDG</div><div class="stat-v">— °</div></div>
+        </div>
+        <div class="unit-bars">
+          <div class="bar-row"><span class="l">BATT</span><div class="bar-track"><div class="bar-fill" style="width:54%"></div></div><span class="v">54%</span></div>
+          <div class="bar-row"><span class="l">LINK</span><div class="bar-track"><div class="bar-fill red" style="width:8%"></div></div><span class="v" style="color:var(--red)">LOST</span></div>
+          <div class="bar-row"><span class="l">FAIL</span><div class="bar-track"><div class="bar-fill red" style="width:100%"></div></div><span class="v" style="color:var(--red)">RTH</span></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="pane-foot">
+      <div class="row"><span>BASE</span><span class="v">FOB-ALPHA</span></div>
+      <div class="row"><span>OPERATOR</span><span class="v">SGT. M. VOLK</span></div>
+      <div class="row"><span>SHIFT</span><span class="v green">14:00–22:00Z</span></div>
+      <div class="row"><span>BLACK BOX</span><span class="v green">REC · 4.2GB</span></div>
+    </div>
+  </aside>
+
+  <!-- CENTER: TACTICAL MAP -->
+  <section class="map-wrap">
+
+    <svg class="map-svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <pattern id="grid-fine" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0,255,209,0.05)" stroke-width="0.5"/>
+        </pattern>
+        <pattern id="grid-coarse" width="160" height="160" patternUnits="userSpaceOnUse">
+          <path d="M 160 0 L 0 0 0 160" fill="none" stroke="rgba(0,255,209,0.12)" stroke-width="0.8"/>
+        </pattern>
+        <radialGradient id="threat-grad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="rgba(255,71,87,0.35)"/>
+          <stop offset="80%" stop-color="rgba(255,71,87,0.04)"/>
+          <stop offset="100%" stop-color="rgba(255,71,87,0)"/>
+        </radialGradient>
+        <radialGradient id="aor-grad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="rgba(0,255,209,0.05)"/>
+          <stop offset="100%" stop-color="rgba(0,255,209,0)"/>
+        </radialGradient>
+        <linearGradient id="trail-grad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="rgba(0,255,209,0)"/>
+          <stop offset="100%" stop-color="rgba(0,255,209,1)"/>
+        </linearGradient>
+      </defs>
+
+      <rect width="1200" height="800" fill="url(#grid-fine)"/>
+      <rect width="1200" height="800" fill="url(#grid-coarse)"/>
+
+      <!-- AOR ring -->
+      <circle cx="600" cy="400" r="300" fill="url(#aor-grad)"/>
+      <circle cx="600" cy="400" r="300" fill="none" stroke="rgba(0,255,209,0.35)" stroke-width="1" stroke-dasharray="6 6"/>
+      <circle cx="600" cy="400" r="200" fill="none" stroke="rgba(0,255,209,0.2)" stroke-width="0.6" stroke-dasharray="4 4"/>
+      <circle cx="600" cy="400" r="100" fill="none" stroke="rgba(0,255,209,0.16)" stroke-width="0.6" stroke-dasharray="3 3"/>
+
+      <!-- Compass cross -->
+      <line x1="600" y1="60" x2="600" y2="740" stroke="rgba(0,255,209,0.1)" stroke-width="0.6"/>
+      <line x1="220" y1="400" x2="980" y2="400" stroke="rgba(0,255,209,0.1)" stroke-width="0.6"/>
+
+      <!-- Threat zone (SAM site) -->
+      <circle cx="900" cy="220" r="140" fill="url(#threat-grad)"/>
+      <circle cx="900" cy="220" r="140" fill="none" stroke="rgba(255,71,87,0.4)" stroke-width="1" stroke-dasharray="3 3"/>
+      <g transform="translate(900,220)">
+        <path d="M-8,-8 L8,8 M-8,8 L8,-8" stroke="#ff4757" stroke-width="2"/>
+        <text x="14" y="4" fill="#ff4757" font-family="JetBrains Mono" font-size="10" font-weight="700">SAM-2 · SUSPECTED</text>
+      </g>
+
+      <!-- No-fly zone (polygon) -->
+      <polygon points="180,140 360,120 420,260 240,300 140,220" fill="rgba(255,176,32,0.06)" stroke="rgba(255,176,32,0.55)" stroke-width="1.2" stroke-dasharray="6 4"/>
+      <text x="200" y="200" fill="#ffb020" font-family="JetBrains Mono" font-size="11" font-weight="700">NO-FLY · CIVIL ATC</text>
+
+      <!-- Friendly base -->
+      <g transform="translate(360,560)">
+        <rect x="-12" y="-12" width="24" height="24" fill="rgba(0,255,209,0.18)" stroke="#00ffd1" stroke-width="1.5"/>
+        <rect x="-3" y="-3" width="6" height="6" fill="#00ffd1"/>
+        <text x="18" y="-2" fill="#00ffd1" font-family="JetBrains Mono" font-size="11" font-weight="700">FOB-ALPHA</text>
+        <text x="18" y="12" fill="rgba(0,255,209,0.6)" font-family="JetBrains Mono" font-size="9">N48°50'12" E37°41'08"</text>
+      </g>
+
+      <!-- WP route 1 -->
+      <path d="M360,560 L520,470 L640,400 L760,340 L820,300" fill="none" stroke="rgba(0,255,209,0.65)" stroke-width="1.2" stroke-dasharray="5 4"/>
+      <g fill="rgba(0,255,209,0.8)" font-family="JetBrains Mono" font-size="9" font-weight="700">
+        <circle cx="520" cy="470" r="3"/><text x="528" y="466">WP-1</text>
+        <circle cx="640" cy="400" r="3"/><text x="648" y="396">WP-2</text>
+        <circle cx="760" cy="340" r="3"/><text x="768" y="336">WP-3</text>
+        <circle cx="820" cy="300" r="3"/><text x="828" y="296">OBJ</text>
+      </g>
+
+      <!-- WP route 2 -->
+      <path d="M360,560 L500,580 L620,540 L720,500" fill="none" stroke="rgba(74,166,255,0.55)" stroke-width="1.2" stroke-dasharray="5 4"/>
+      <g fill="rgba(74,166,255,0.85)" font-family="JetBrains Mono" font-size="9" font-weight="700">
+        <circle cx="500" cy="580" r="3"/>
+        <circle cx="620" cy="540" r="3"/>
+        <circle cx="720" cy="500" r="3"/><text x="728" y="496">SCAN</text>
+      </g>
+
+      <!-- Drone 1 (Raven-01) — selected -->
+      <g transform="translate(640,400)">
+        <path d="M-30,0 L-12,0 M30,0 L12,0 M0,-30 L0,-12 M0,30 L0,12" stroke="rgba(0,255,209,0.4)" stroke-width="0.8"/>
+        <circle cx="0" cy="0" r="60" fill="none" stroke="rgba(0,255,209,0.18)" stroke-width="0.6" stroke-dasharray="2 4"/>
+        <polygon points="0,-9 8,7 0,3 -8,7" fill="#00ffd1" stroke="#fff" stroke-width="0.5"/>
+        <text x="13" y="-4" fill="#fff" font-family="JetBrains Mono" font-size="11" font-weight="700">RAVEN-01</text>
+        <text x="13" y="9" fill="rgba(0,255,209,0.9)" font-family="JetBrains Mono" font-size="9">142m · 14.2m/s · 087°</text>
+        <text x="13" y="22" fill="rgba(255,255,255,0.5)" font-family="JetBrains Mono" font-size="8">B 78% · L 92%</text>
+      </g>
+
+      <!-- Drone 2 (Raven-02) -->
+      <g transform="translate(580,440)">
+        <polygon points="0,-7 6,5 0,2 -6,5" fill="#00ffd1"/>
+        <text x="11" y="-2" fill="#00ffd1" font-family="JetBrains Mono" font-size="10" font-weight="700">RAVEN-02</text>
+        <text x="11" y="10" fill="rgba(0,255,209,0.5)" font-family="JetBrains Mono" font-size="8">156m · 092°</text>
+      </g>
+
+      <!-- Falcon-03 RTB -->
+      <g transform="translate(440,520)">
+        <polygon points="0,-7 6,5 0,2 -6,5" fill="#ffb020" transform="rotate(-90)"/>
+        <text x="11" y="-2" fill="#ffb020" font-family="JetBrains Mono" font-size="10" font-weight="700">FALCON-03 ▼</text>
+        <text x="11" y="10" fill="rgba(255,176,32,0.6)" font-family="JetBrains Mono" font-size="8">BINGO · 22%</text>
+      </g>
+
+      <!-- Falcon-04 -->
+      <g transform="translate(680,580)">
+        <polygon points="0,-7 6,5 0,2 -6,5" fill="#00ffd1" transform="rotate(45)"/>
+        <text x="11" y="-2" fill="#00ffd1" font-family="JetBrains Mono" font-size="10" font-weight="700">FALCON-04</text>
+      </g>
+
+      <!-- Shrike-06 LINK LOSS -->
+      <g transform="translate(820,500)">
+        <circle cx="0" cy="0" r="14" fill="none" stroke="#ff4757" stroke-width="1" stroke-dasharray="3 2"/>
+        <polygon points="0,-7 6,5 0,2 -6,5" fill="#ff4757"/>
+        <text x="11" y="-2" fill="#ff4757" font-family="JetBrains Mono" font-size="10" font-weight="700">SHRIKE-06</text>
+        <text x="11" y="10" fill="rgba(255,71,87,0.7)" font-family="JetBrains Mono" font-size="8">LINK LOST · 12s</text>
+      </g>
+
+      <!-- ADS-B traffic (civil) -->
+      <g transform="translate(280,300)">
+        <polygon points="0,-6 5,4 0,1 -5,4" fill="rgba(138,160,189,0.5)" transform="rotate(60)"/>
+        <text x="9" y="2" fill="rgba(138,160,189,0.7)" font-family="JetBrains Mono" font-size="8">ADS-B · LH4521 · FL310</text>
+      </g>
+
+      <!-- Track trail -->
+      <path d="M360,560 L520,470 L640,400" fill="none" stroke="url(#trail-grad)" stroke-width="2"/>
+
+      <!-- Coordinates ticks -->
+      <g fill="rgba(138,160,189,0.6)" font-family="JetBrains Mono" font-size="8">
+        <text x="10" y="22">N48°52'00"</text>
+        <text x="10" y="402">N48°50'00"</text>
+        <text x="10" y="782">N48°48'00"</text>
+        <text x="220" y="792">E37°40'00"</text>
+        <text x="600" y="792">E37°42'00"</text>
+        <text x="980" y="792">E37°44'00"</text>
+      </g>
+
+      <!-- Scale bar -->
+      <g transform="translate(40,720)">
+        <rect x="0" y="0" width="80" height="3" fill="rgba(0,255,209,0.6)"/>
+        <rect x="80" y="0" width="80" height="3" fill="rgba(0,255,209,0.25)"/>
+        <text x="0" y="-5" fill="rgba(0,255,209,0.7)" font-family="JetBrains Mono" font-size="9">0</text>
+        <text x="80" y="-5" fill="rgba(0,255,209,0.7)" font-family="JetBrains Mono" font-size="9">2 km</text>
+      </g>
+    </svg>
+
+    <div class="hud-corner tl"></div>
+    <div class="hud-corner tr"></div>
+    <div class="hud-corner bl"></div>
+    <div class="hud-corner br"></div>
+
+    <div class="hud hud-aor">
+      <div class="l">CURSOR · MGRS</div>
+      <div class="v mono">37T GH 12450 81230</div>
+      <div class="row">
+        <div><div class="l">ELEV</div><div class="v">214 m AMSL</div></div>
+        <div><div class="l">RNG TO RAVEN-01</div><div class="v">1.84 km</div></div>
+      </div>
+    </div>
+
+    <div class="hud hud-compass">
+      <div class="compass-readout">
+        <div class="v mono">087°</div>
+        <div class="l">HDG · MAG</div>
+      </div>
+    </div>
+
+    <div class="alert-ribbon">SHRIKE-06 · LINK LOSS · AUTO-RTH ACTIVE · T+12s</div>
+
+    <div class="hud hud-tools">
+      <button class="tool-btn active" title="Tactical view">⊕</button>
+      <button class="tool-btn" title="Satellite">◉</button>
+      <button class="tool-btn" title="Threats">⚠</button>
+      <button class="tool-btn" title="Layers">≡</button>
+      <button class="tool-btn" title="Measure">∡</button>
+      <button class="tool-btn" title="Plan WP">✚</button>
+    </div>
+
+    <div class="hud-sensor-strip">
+      <div class="sensor-card eo">
+        <div class="sc-tag">EO · RAVEN-01</div>
+        <div class="sc-rec">REC</div>
+        <div class="sc-target"></div>
+        <div class="sc-meta"><span>4.2× ZOOM</span><span>1080p · 30fps</span></div>
+      </div>
+      <div class="sensor-card ir">
+        <div class="sc-tag">IR · RAVEN-01</div>
+        <div class="sc-target"></div>
+        <div class="sc-meta"><span>WHITE-HOT</span><span>+34.2°C</span></div>
+      </div>
+      <div class="sensor-card lidar">
+        <div class="sc-tag">LIDAR · FALCON-04</div>
+        <div class="sc-meta"><span>3D MESH</span><span>240k pts/s</span></div>
+      </div>
+    </div>
+
+    <div class="hud hud-replay">
+      <button class="replay-btn">⏮</button>
+      <button class="replay-btn primary">⏵</button>
+      <button class="replay-btn">⏭</button>
+      <div class="replay-track">
+        <div class="replay-fill"></div>
+        <div class="replay-pos"></div>
+      </div>
+      <div class="replay-time mono">T+18:24 / 47:00</div>
+      <div class="replay-mode">LIVE · AAR READY</div>
+    </div>
+
+  </section>
+
+  <!-- RIGHT: MISSIONS / COMMS / EVENTS -->
+  <aside class="pane right">
+    <div class="section-head"><span>ACTIVE TASKINGS</span><span class="sh-meta">04 / 06</span></div>
+    <div class="missions">
+      <div class="mission">
+        <div class="mission-row1"><span class="mission-id">TSK-24-117-A</span><span class="mission-asg">→ RAVEN-01</span></div>
+        <div class="mono" style="font-size:10px;color:var(--text-dim)">RECCE · GRID K-7-04 · ISR PASS</div>
+        <div class="mission-prog"><div class="f" style="width:62%"></div></div>
+        <div class="mission-row2"><span>WP 2/4</span><span>ETA <span class="v">12:42</span></span><span>62%</span></div>
+      </div>
+      <div class="mission">
+        <div class="mission-row1"><span class="mission-id">TSK-24-117-B</span><span class="mission-asg">→ RAVEN-02</span></div>
+        <div class="mono" style="font-size:10px;color:var(--text-dim)">OVERWATCH · CONVOY ESCORT</div>
+        <div class="mission-prog"><div class="f" style="width:38%"></div></div>
+        <div class="mission-row2"><span>WP 1/3</span><span>ETA <span class="v">28:15</span></span><span>38%</span></div>
+      </div>
+      <div class="mission">
+        <div class="mission-row1"><span class="mission-id">TSK-24-117-C</span><span class="mission-asg">→ FALCON-04</span></div>
+        <div class="mono" style="font-size:10px;color:var(--text-dim)">LIDAR MAPPING · GRID K-7-08</div>
+        <div class="mission-prog"><div class="f" style="width:81%"></div></div>
+        <div class="mission-row2"><span>WP 3/4</span><span>ETA <span class="v">06:51</span></span><span>81%</span></div>
+      </div>
+    </div>
+
+    <div class="section-head"><span>COMMS · INTERCOM</span><span class="sh-meta">PTT</span></div>
+    <div class="comms">
+      <button class="ptt">FLEET-NET</button>
+      <button class="ptt">RAVEN-01</button>
+      <button class="ptt">RAVEN-02</button>
+      <button class="ptt amber">FALCON-03</button>
+      <button class="ptt">FALCON-04</button>
+      <button class="ptt">SHRIKE-05</button>
+      <button class="ptt red">SHRIKE-06</button>
+      <button class="ptt">FOB-ALPHA</button>
+    </div>
+
+    <div class="section-head"><span>EVENT STREAM · STANAG-4609</span><span class="sh-meta">TAIL · LIVE</span></div>
+    <div class="events">
+      <div class="ev crit"><span class="ts">18:23:47</span><span class="src">SHRIKE-06</span><span class="msg">LINK LOSS · auto-RTH initiated · last fix 091823.41Z</span></div>
+      <div class="ev warn"><span class="ts">18:23:31</span><span class="src">FALCON-03</span><span class="msg">BINGO fuel · 22% — automatic return-to-base</span></div>
+      <div class="ev"><span class="ts">18:23:18</span><span class="src">RAVEN-01</span><span class="msg">WP-2 reached · target acquired · EO/IR active</span></div>
+      <div class="ev ok"><span class="ts">18:22:55</span><span class="src">FALCON-04</span><span class="msg">LIDAR pass complete · 240k pts uploaded to GCS</span></div>
+      <div class="ev"><span class="ts">18:22:40</span><span class="src">RAVEN-02</span><span class="msg">geofence proximity warning · KOZ civil ATC 480m</span></div>
+      <div class="ev ok"><span class="ts">18:22:14</span><span class="src">FOB-ALPHA</span><span class="msg">SHRIKE-05 ARMED · standby for tasking</span></div>
+      <div class="ev"><span class="ts">18:22:01</span><span class="src">RAVEN-01</span><span class="msg">heading 087° · GPS RTK fix · 24 SV</span></div>
+      <div class="ev"><span class="ts">18:21:48</span><span class="src">C2-LINK</span><span class="msg">primary uplink AES-256 · SAT-2 backup armed</span></div>
+      <div class="ev warn"><span class="ts">18:21:32</span><span class="src">RAVEN-02</span><span class="msg">ADS-B traffic · LH4521 · 1.4 km offset · clear</span></div>
+      <div class="ev ok"><span class="ts">18:21:01</span><span class="src">OPERATOR</span><span class="msg">M.VOLK · authenticated · 2FA · session 0x7F2A</span></div>
+      <div class="ev"><span class="ts">18:20:42</span><span class="src">FALCON-04</span><span class="msg">payload bay opened · LIDAR online · self-test PASS</span></div>
+      <div class="ev"><span class="ts">18:20:11</span><span class="src">RAVEN-01</span><span class="msg">takeoff confirmed · TOGW 6.2kg · CG nominal</span></div>
+    </div>
+  </aside>
+
+</main>
+
+<div class="classification bot">UNCLASSIFIED // FOR OFFICIAL USE ONLY // DRONE OPS DEMO</div>
+
+</body>
+</html>

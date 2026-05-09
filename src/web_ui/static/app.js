@@ -28,7 +28,7 @@ const darkTiles = new Cesium.UrlTemplateImageryProvider({
   credit: 'OpenStreetMap',
   maximumLevel: 19,
 });
-document.body.classList.add('dark-map');
+document.body.classList.add('light-map');
 
 const viewer = new Cesium.Viewer('cesium', {
   imageryProvider: false,
@@ -47,8 +47,8 @@ const viewer = new Cesium.Viewer('cesium', {
 viewer.imageryLayers.addImageryProvider(darkTiles);
 
 viewer.scene.globe.enableLighting = false;
-viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#0a0f1c');
-viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0a0f1c');
+viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#f3f4ee');
+viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#f3f4ee');
 viewer.scene.skyBox.show = false;
 viewer.scene.sun.show = false;
 viewer.scene.moon.show = false;
@@ -79,23 +79,23 @@ const state = {
 };
 
 const COLOR = {
-  IDLE: '#94a3b8',
-  ACTIVE: '#60a5fa',
-  FLYING: '#60a5fa',
-  TAKEOFF: '#fbbf24',
-  MISSION: '#60a5fa',
-  IN_PROGRESS: '#60a5fa',
-  STARTED: '#60a5fa',
-  LANDING: '#fb923c',
-  LAND: '#fb923c',
-  COMPLETED: '#22c55e',
-  ERROR: '#f87171',
-  ABORTED: '#f87171',
-  PLANNED: '#94a3b8',
-  ASSIGNED: '#94a3b8',
-  UPLOADED: '#94a3b8',
+  IDLE: '#6b7280',
+  ACTIVE: '#1d4ed8',
+  FLYING: '#1d4ed8',
+  TAKEOFF: '#b45309',
+  MISSION: '#1d4ed8',
+  IN_PROGRESS: '#1d4ed8',
+  STARTED: '#1d4ed8',
+  LANDING: '#b45309',
+  LAND: '#b45309',
+  COMPLETED: '#166534',
+  ERROR: '#b91c1c',
+  ABORTED: '#b91c1c',
+  PLANNED: '#6b7280',
+  ASSIGNED: '#6b7280',
+  UPLOADED: '#6b7280',
 };
-const statusColor = (s) => COLOR[s] || '#94a3b8';
+const statusColor = (s) => COLOR[s] || '#6b7280';
 
 // =================================================================
 // INIT
@@ -131,9 +131,9 @@ function drawBase() {
     ellipse: {
       semiMinorAxis: 40.0,
       semiMajorAxis: 40.0,
-      material: Cesium.Color.fromCssColorString('#5eead4').withAlpha(0.14),
+      material: Cesium.Color.fromCssColorString('#1d4ed8').withAlpha(0.12),
       outline: true,
-      outlineColor: Cesium.Color.fromCssColorString('#5eead4'),
+      outlineColor: Cesium.Color.fromCssColorString('#1d4ed8'),
       outlineWidth: 2,
       heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
     },
@@ -141,15 +141,15 @@ function drawBase() {
       length: 10.0,
       topRadius: 0,
       bottomRadius: 14.0,
-      material: Cesium.Color.fromCssColorString('#5eead4').withAlpha(0.3),
+      material: Cesium.Color.fromCssColorString('#1d4ed8').withAlpha(0.28),
       outline: true,
-      outlineColor: Cesium.Color.fromCssColorString('#5eead4'),
+      outlineColor: Cesium.Color.fromCssColorString('#1d4ed8'),
     },
     label: {
-      text: '⌂ BASE',
-      font: '700 11px "JetBrains Mono", monospace',
-      fillColor: Cesium.Color.fromCssColorString('#5eead4'),
-      outlineColor: Cesium.Color.BLACK,
+      text: '◼ BASE',
+      font: '700 11px "IBM Plex Mono", "JetBrains Mono", monospace',
+      fillColor: Cesium.Color.fromCssColorString('#0a0e14'),
+      outlineColor: Cesium.Color.WHITE,
       outlineWidth: 3,
       style: Cesium.LabelStyle.FILL_AND_OUTLINE,
       verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
@@ -305,9 +305,9 @@ function renderDrone(id) {
       },
       label: {
         text: d.name || id,
-        font: '700 11px "JetBrains Mono", monospace',
-        fillColor: Cesium.Color.WHITE,
-        outlineColor: Cesium.Color.BLACK,
+        font: '700 11px "IBM Plex Mono", "JetBrains Mono", monospace',
+        fillColor: Cesium.Color.fromCssColorString('#0a0e14'),
+        outlineColor: Cesium.Color.WHITE,
         outlineWidth: 3,
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
@@ -410,9 +410,9 @@ function drawWaypoints(mid, wps) {
     const lat = p.lat, lon = p.lon;
     const alt = Math.max(1, p.alt || 1);
     const kind = String(wp.kind || 'NAV').toUpperCase();
-    const css = kind === 'TAKEOFF' ? '#fbbf24'
-              : kind === 'LAND' ? '#22c55e'
-              : '#5eead4';
+    const css = kind === 'TAKEOFF' ? '#b45309'
+              : kind === 'LAND' ? '#166534'
+              : '#1d4ed8';
     const color = Cesium.Color.fromCssColorString(css);
 
     const ent = viewer.entities.add({
@@ -421,7 +421,7 @@ function drawWaypoints(mid, wps) {
         length: Math.max(alt, 2),
         topRadius: 4.0,
         bottomRadius: 4.0,
-        material: color.withAlpha(0.35),
+        material: color.withAlpha(0.32),
         outline: true,
         outlineColor: color,
       },
@@ -429,9 +429,9 @@ function drawWaypoints(mid, wps) {
         text: kind === 'TAKEOFF' ? '▲ TAKEOFF'
              : kind === 'LAND' ? '▼ LAND'
              : `WP${idx}`,
-        font: '700 10px "JetBrains Mono", monospace',
+        font: '700 10px "IBM Plex Mono", "JetBrains Mono", monospace',
         fillColor: color,
-        outlineColor: Cesium.Color.BLACK,
+        outlineColor: Cesium.Color.WHITE,
         outlineWidth: 3,
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
@@ -450,7 +450,7 @@ function drawWaypoints(mid, wps) {
         positions: Cesium.Cartesian3.fromDegreesArrayHeights(pathPts),
         width: 1.5,
         material: new Cesium.PolylineDashMaterialProperty({
-          color: Cesium.Color.fromCssColorString('#5eead4').withAlpha(0.55),
+          color: Cesium.Color.fromCssColorString('#1d4ed8').withAlpha(0.6),
           dashLength: 16.0,
         }),
       },
