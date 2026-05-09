@@ -4,6 +4,7 @@ import inspect
 import json
 import logging
 import os
+import signal
 import time
 from pathlib import Path
 import sys
@@ -24,8 +25,33 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 )
 
+# aiogrpc дублирует "Socket closed" исключения в свой логгер при остановке
+# mavsdk_server — это шум, а не реальная ошибка. Bridge сам логирует те же
+# исключения через свои try/except (с большим контекстом). Глушим.
+logging.getLogger("aiogrpc").setLevel(logging.CRITICAL)
+logging.getLogger("aiogrpc.utils").setLevel(logging.CRITICAL)
+
 MISSION_ITEM_SIGNATURE = str(inspect.signature(MissionItem.__init__))
 _MISSION_ITEM_SIGNATURE_LOGGED = False
+
+
+def _is_shutdown_error(e: BaseException) -> bool:
+    """Признаки того, что gRPC-стрим обвалился из-за остановки mavsdk_server,
+    а не из-за реальной проблемы. Такие случаи логируем как info, не error."""
+    s = str(e)
+    return (
+        "Socket closed" in s
+        or "StatusCode.UNAVAILABLE" in s
+        or "Cancelled" in s
+        or isinstance(e, asyncio.CancelledError)
+    )
+
+
+def _log_stream_stop(name: str, what: str, e: BaseException) -> None:
+    if _is_shutdown_error(e):
+        log.info(f"[{name}] {what} stream stopped (shutdown)")
+    else:
+        log.error(f"[{name}] ❌ Ошибка телеметрии {what}: {e!r}")
 
 
 def _map_kind_to_vehicle_action(kind: str) -> MissionItem.VehicleAction:
@@ -458,8 +484,8 @@ async def run_for_drone(
                         f"alt_rel={pos.relative_altitude_m:.2f}m alt_abs={pos.absolute_altitude_m:.1f}m"
                     )
                     last_log = now
-        except Exception as e:
-            log.error(f"[{name}] ❌ Ошибка телеметрии позиции: {e!r}")
+        except BaseException as e:
+            _log_stream_stop(name, "позиции", e)
 
     # --- режим полёта (MANUAL/ALTITUDE/OFFBOARD/MISSION/HOLD/RETURN/LAND...) ---
     async def log_flight_mode():
@@ -469,8 +495,8 @@ async def run_for_drone(
                 if mode != last:
                     log.info(f"[{name}] [MODE] flight_mode={mode}")
                     last = mode
-        except Exception as e:
-            log.error(f"[{name}] ❌ Ошибка телеметрии flight_mode: {e!r}")
+        except BaseException as e:
+            _log_stream_stop(name, "flight_mode", e)
 
     # --- armed/disarmed ---
     async def log_armed():
@@ -481,8 +507,8 @@ async def run_for_drone(
                 if armed != last:
                     log.info(f"[{name}] [ARM] armed={armed}")
                     last = armed
-        except Exception as e:
-            log.error(f"[{name}] ❌ Ошибка телеметрии armed: {e!r}")
+        except BaseException as e:
+            _log_stream_stop(name, "armed", e)
 
     # --- прогресс миссии: current/total wp + MQTT publish ---
     async def log_mission_progress():
@@ -499,8 +525,8 @@ async def run_for_drone(
                     "total": int(p.total),
                     "ts": time.time(),
                 }, qos=0)
-        except Exception as e:
-            log.error(f"[{name}] ❌ Ошибка телеметрии mission_progress: {e!r}")
+        except BaseException as e:
+            _log_stream_stop(name, "mission_progress", e)
 
     # --- actuator outputs: реально ли PX4 крутит моторы ---
     async def log_actuators():
@@ -514,16 +540,16 @@ async def run_for_drone(
                 first4 = [round(float(v), 3) for v in outputs[:4]]
                 log.info(f"[{name}] [ACT] motors[0:4]={first4} active={getattr(ao, 'active', '?')}")
                 last_logged = now
-        except Exception as e:
-            log.error(f"[{name}] ❌ Ошибка телеметрии actuator_output_status: {e!r}")
+        except BaseException as e:
+            _log_stream_stop(name, "actuator_output_status", e)
 
     # --- in_air тракер (для статуса FLYING/IDLE) ---
     async def track_in_air():
         try:
             async for in_air in sys.telemetry.in_air():
                 telem_state["in_air"] = in_air
-        except Exception as e:
-            log.error(f"[{name}] ❌ Ошибка телеметрии in_air: {e!r}")
+        except BaseException as e:
+            _log_stream_stop(name, "in_air", e)
 
     # --- периодическая публикация fleet/active + закрытие миссии по mission_progress ---
     async def publish_fleet_active():
@@ -621,20 +647,38 @@ async def main_async():
     drones = cfg["drones"]
     sim_home = cfg["simulator"]["home"]
     home_lat, home_lon, home_alt = (
-        sim_home["lat"],
-        sim_home["lon"],
-        sim_home.get("alt", 0.0),
+        float(sim_home["lat"]),
+        float(sim_home["lon"]),
+        float(sim_home.get("alt", 0.0)),
     )
 
-    # Режим одного дрона: переменная DRONE_ID выбирает целевой борт из конфига.
+    # Режим одного дрона: переменная DRONE_ID выбирает целевой борт из config.yaml.
     # Нужен для multi-drone, т.к. MAVSDK-Python в одном Python-процессе не умеет
     # корректно изолировать два System() (mavsdk_server'ы «слипают» target system).
-    # run_system.py запускает по одному bridge-процессу на дрон.
+    # sim_supervisor и run_system.py запускают по одному bridge-процессу на дрон.
     drone_id_env = os.environ.get("DRONE_ID")
     if drone_id_env is not None:
         drones = [d for d in drones if str(d["id"]) == str(drone_id_env)]
         if not drones:
             raise RuntimeError(f"DRONE_ID={drone_id_env} не найден в config.yaml")
+        # Берём home-позицию из дрона (если задана), иначе из simulator.home.
+        d0 = drones[0]
+        if "home_lat" in d0:
+            home_lat = float(d0["home_lat"])
+        if "home_lon" in d0:
+            home_lon = float(d0["home_lon"])
+
+    # Asyncio-нативный обработчик SIGTERM/SIGINT — чтобы при остановке через
+    # supervisor (sim_supervisor посылает SIGTERM) async for'ы корректно
+    # отменялись, finally-блоки выполняли bus.stop(), а в логах не было
+    # каскада "Socket closed" tracebacks из gRPC-стримов.
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for _sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(_sig, stop_event.set)
+        except (NotImplementedError, RuntimeError):
+            pass  # Windows / nested loop
 
     tasks = []
     for d in drones:
@@ -648,7 +692,21 @@ async def main_async():
             run_for_drone(instance_id, connection_url, home_lat, home_lon, home_alt, grpc_port)
         ))
 
-    await asyncio.gather(*tasks)
+    stop_task = asyncio.create_task(stop_event.wait())
+    try:
+        done, pending = await asyncio.wait(
+            [stop_task, *tasks],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if stop_task in done:
+            log.info("📡 Получен сигнал остановки, отменяю стримы...")
+        for t in pending:
+            t.cancel()
+        # Даём finally-блокам отработать (bus.stop, закрытие gRPC).
+        await asyncio.gather(*pending, return_exceptions=True)
+    finally:
+        if not stop_task.done():
+            stop_task.cancel()
 
 
 def main():

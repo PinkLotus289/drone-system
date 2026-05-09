@@ -1,263 +1,771 @@
-// ========== Tabs ==========
-const tabs = document.querySelectorAll(".tab-btn");
-const tabSections = document.querySelectorAll(".tab");
-tabs.forEach((btn) =>
-  btn.addEventListener("click", () => {
-    tabs.forEach((b) => b.classList.remove("active"));
-    tabSections.forEach((t) => t.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById(btn.dataset.tab).classList.add("active");
-  })
-);
+// ================================================================
+//  DRONE OPS · MISSION CONTROL  — Cesium 1.118
+// ================================================================
 
-// ========== Map ==========
-const map = L.map("map").setView([43.0747, -89.3842], 14);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
-
-// Держим ссылки
-let baseMarker = null;
-const droneMarkers = {};          // { [droneId]: L.Marker }
-const missionPolylines = {};      // { [droneId]: L.Polyline }
-
-// --- база ---
-async function loadBase() {
-  try {
-    const res = await fetch("/api/base");
-    const b = await res.json();
-    if (baseMarker) map.removeLayer(baseMarker);
-    baseMarker = L.marker([b.lat, b.lon]).addTo(map).bindPopup("База дронов");
-    document.getElementById("base-lat").value = b.lat.toFixed(6);
-    document.getElementById("base-lon").value = b.lon.toFixed(6);
-    // центрируем только один раз при первом рендере
-    if (!window.__baseCentered) {
-      map.setView([b.lat, b.lon], 14);
-      window.__baseCentered = true;
-    }
-  } catch (e) {
-    console.error("Не удалось загрузить базу:", e);
-  }
-}
-document.getElementById("reload-base").addEventListener("click", loadBase);
-loadBase();
-
-// ========== WebSocket ==========
-const socket = new WebSocket(`ws://${window.location.host}/ws`);
-socket.onopen = () => console.log("✅ WebSocket подключен");
-socket.onclose = () => console.log("❌ WebSocket закрыт");
-
-// Живой кеш последней позиции каждого дрона (для таблицы миссий).
-const lastDronePos = {}; // { [vehId]: {lat, lon, alt} }
-
-socket.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-
-  // ---- телеметрия ----
-  if (msg.type === "telemetry_update" && msg.payload?.lat && msg.payload?.lon) {
-    const id = msg.topic.split("/")[1]; // telem/<id>/...
-    const { lat, lon, alt } = msg.payload;
-    upsertDroneMarker(id, lat, lon);
-    lastDronePos[id] = { lat, lon, alt };
-    scheduleFleetRefreshSoon();
-    scheduleMissionsRefreshSoon();
-  }
-
-  // ---- появление активного дрона ----
-  if (msg.type === "drone_active" && msg.payload) {
-    const d = msg.payload;
-    if (d.lat && d.lon) {
-      upsertDroneMarker(d.id || "drone", d.lat, d.lon);
-      lastDronePos[d.id] = { lat: d.lat, lon: d.lon, alt: d.alt };
-    }
-    scheduleFleetRefreshSoon();
-  }
-
-  // ---- план миссии (линия маршрута) ----
-  if (msg.type === "mission_planned" && msg.payload?.waypoints) {
-    const id = msg.topic.split("/")[1]; // mission/<id>/planned
-    const coords = msg.payload.waypoints.map((w) => [
-      w.pos?.lat ?? w.lat,
-      w.pos?.lon ?? w.lon,
-    ]);
-    drawMissionPolyline(id, coords);
-    scheduleMissionsRefreshSoon();
-  }
-
-  // ---- progress / status / assigned — обновляем таблицу миссий ----
-  if (msg.type === "mission_progress" || msg.type === "mission_status" ||
-      msg.type === "mission_assigned") {
-    scheduleMissionsRefreshSoon();
-  }
-};
-
-function upsertDroneMarker(id, lat, lon) {
-  if (!droneMarkers[id]) {
-    droneMarkers[id] = L.marker([lat, lon]).addTo(map).bindPopup(`🚁 Drone ${id}`);
-  } else {
-    droneMarkers[id].setLatLng([lat, lon]);
-  }
-}
-
-function drawMissionPolyline(droneId, coords) {
-  // удалим предыдущую линию, если есть, чтобы не плодить
-  if (missionPolylines[droneId]) {
-    map.removeLayer(missionPolylines[droneId]);
-  }
-  const pl = L.polyline(coords, { weight: 3 }); // цвет по умолчанию из темы
-  pl.addTo(map).bindPopup(`📦 Маршрут дрона ${droneId}`);
-  missionPolylines[droneId] = pl;
-}
-
-// Мягкое авто-центрирование по всем маркерам раз в 5 c (без дёрганья)
-setInterval(() => {
-  const markers = Object.values(droneMarkers);
-  if (markers.length > 0) {
-    const group = L.featureGroup(markers);
-    const bounds = group.getBounds().pad(0.25);
-    // не дёргаем камеру, если маркеры +/- в кадре
-    if (!map.getBounds().contains(bounds)) {
-      map.fitBounds(bounds);
-    }
-  }
-}, 5000);
-
-// ========== Orders ==========
-function val(id) { return document.getElementById(id).value; }
-
-document.getElementById("orderForm").onsubmit = async (e) => {
-  e.preventDefault();
-  const order = {
-    from: { lat: parseFloat(val("from-lat")), lon: parseFloat(val("from-lon")) },
-    to:   { lat: parseFloat(val("to-lat")),   lon: parseFloat(val("to-lon")) },
-    weight: parseFloat(val("orderWeight")),
-    // опционально: выбранный дрон
-    drone_id: document.getElementById("droneSelect").value || undefined,
-  };
-  await fetch("/api/orders", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(order),
-  });
-  alert("🚀 Заказ отправлен!");
-};
-
-// Выбор точек A/B кликом по карте (не плодим лишние маркеры)
-let selecting = "from";
-let pickMarker, dropMarker;
-map.on("click", (e) => {
-  if (!document.getElementById("orders").classList.contains("active")) return;
-  const { lat, lng } = e.latlng;
-  if (selecting === "from") {
-    setInput("from-lat", lat);
-    setInput("from-lon", lng);
-    if (pickMarker) map.removeLayer(pickMarker);
-    pickMarker = L.marker([lat, lng]).addTo(map).bindPopup("A — pick-up");
-    selecting = "to";
-  } else {
-    setInput("to-lat", lat);
-    setInput("to-lon", lng);
-    if (dropMarker) map.removeLayer(dropMarker);
-    dropMarker = L.marker([lat, lng]).addTo(map).bindPopup("B — drop-off");
-    selecting = "from";
+// Глобальный ловец ошибок, чтобы увидеть boot-fail прямо на экране.
+window.addEventListener('error', (e) => {
+  const el = document.getElementById('boot-error');
+  if (el && !el.textContent) {
+    el.textContent = `BOOT ERROR\n${e.message}\n${e.filename}:${e.lineno}`;
+    el.classList.remove('hidden');
   }
 });
-function setInput(id, v) { document.getElementById(id).value = (+v).toFixed(6); }
 
-// ========== Fleet ==========
-async function loadFleet() {
+if (typeof Cesium === 'undefined') {
+  document.getElementById('boot-error').textContent =
+    'Cesium CDN не загрузился. Проверь интернет или смени CDN в index.html.';
+  document.getElementById('boot-error').classList.remove('hidden');
+  throw new Error('Cesium not loaded');
+}
+
+Cesium.Ion.defaultAccessToken = '';
+
+// ---------- Viewer (Cesium 1.118 API) ----------
+// OpenStreetMapImageryProvider удалён в Cesium 1.110 — используем UrlTemplateImageryProvider.
+// Standard OSM tiles + CSS-фильтр (invert + hue-rotate) → dark look, без токенов и CDN-сюрпризов.
+const darkTiles = new Cesium.UrlTemplateImageryProvider({
+  url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  credit: 'OpenStreetMap',
+  maximumLevel: 19,
+});
+document.body.classList.add('dark-map');
+
+const viewer = new Cesium.Viewer('cesium', {
+  imageryProvider: false,
+  baseLayerPicker: false,
+  timeline: false,
+  animation: false,
+  geocoder: false,
+  homeButton: false,
+  navigationHelpButton: false,
+  sceneModePicker: false,
+  fullscreenButton: false,
+  infoBox: false,
+  selectionIndicator: false,
+  shouldAnimate: true,
+});
+viewer.imageryLayers.addImageryProvider(darkTiles);
+
+viewer.scene.globe.enableLighting = false;
+viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#0a0f1c');
+viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0a0f1c');
+viewer.scene.skyBox.show = false;
+viewer.scene.sun.show = false;
+viewer.scene.moon.show = false;
+viewer.scene.skyAtmosphere.show = false;
+viewer.scene.fog.enabled = false;
+
+// =================================================================
+// STATE
+// =================================================================
+const state = {
+  drones: new Map(),
+  missions: new Map(),
+  trajectories: new Map(),
+  entities: {
+    base: null,
+    drones: new Map(),
+    leaderLines: new Map(),
+    shadows: new Map(),
+    trails: new Map(),
+    waypoints: new Map(),
+    missionPaths: new Map(),
+  },
+  base: { lat: 43.0747, lon: -89.3842 },
+  completedToday: 0,
+  pickingFor: null,
+  mode: 'ops',
+  wsConnected: false,
+};
+
+const COLOR = {
+  IDLE: '#94a3b8',
+  ACTIVE: '#60a5fa',
+  FLYING: '#60a5fa',
+  TAKEOFF: '#fbbf24',
+  MISSION: '#60a5fa',
+  IN_PROGRESS: '#60a5fa',
+  STARTED: '#60a5fa',
+  LANDING: '#fb923c',
+  LAND: '#fb923c',
+  COMPLETED: '#22c55e',
+  ERROR: '#f87171',
+  ABORTED: '#f87171',
+  PLANNED: '#94a3b8',
+  ASSIGNED: '#94a3b8',
+  UPLOADED: '#94a3b8',
+};
+const statusColor = (s) => COLOR[s] || '#94a3b8';
+
+// =================================================================
+// INIT
+// =================================================================
+async function init() {
   try {
-    const res = await fetch("/api/fleet"); // если нет — /api/drones с адаптацией ниже
-    let data = await res.json();
-    const list = Array.isArray(data) ? data : (data.fleet || data.drones || []);
-    const tbody = document.querySelector("#fleet-table tbody");
-    tbody.innerHTML = "";
-    list.forEach((d) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${d.name || d.id}</td>
-        <td>${d.status || ""}</td>
-        <td>${fmtCoord(d.lat)}, ${fmtCoord(d.lon)}</td>
-        <td>${d.alt != null ? (+d.alt).toFixed(1) : ""}</td>
-      `;
-      tbody.appendChild(tr);
+    const res = await fetch('/api/base');
+    const b = await res.json();
+    if (b && b.lat && b.lon) state.base = { lat: +b.lat, lon: +b.lon };
+  } catch (e) { /* ignore */ }
+
+  drawBase();
+  flyToBase(0);
+
+  setInterval(refreshFleet, 2000);
+  setInterval(refreshMissions, 1500);
+  setInterval(tickClock, 1000);
+  tickClock();
+
+  connectWS();
+  wireUI();
+  refreshFleet();
+}
+
+// =================================================================
+// BASE
+// =================================================================
+function drawBase() {
+  const { lat, lon } = state.base;
+  state.entities.base = viewer.entities.add({
+    name: 'BASE',
+    position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),
+    ellipse: {
+      semiMinorAxis: 40.0,
+      semiMajorAxis: 40.0,
+      material: Cesium.Color.fromCssColorString('#5eead4').withAlpha(0.14),
+      outline: true,
+      outlineColor: Cesium.Color.fromCssColorString('#5eead4'),
+      outlineWidth: 2,
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    },
+    cylinder: {
+      length: 10.0,
+      topRadius: 0,
+      bottomRadius: 14.0,
+      material: Cesium.Color.fromCssColorString('#5eead4').withAlpha(0.3),
+      outline: true,
+      outlineColor: Cesium.Color.fromCssColorString('#5eead4'),
+    },
+    label: {
+      text: '⌂ BASE',
+      font: '700 11px "JetBrains Mono", monospace',
+      fillColor: Cesium.Color.fromCssColorString('#5eead4'),
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 3,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+      pixelOffset: new Cesium.Cartesian2(0, -14),
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+  });
+}
+
+function flyToBase(duration = 1.4) {
+  const { lat, lon } = state.base;
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat - 0.006, 1800),
+    orientation: {
+      heading: 0,
+      pitch: Cesium.Math.toRadians(-50),
+      roll: 0,
+    },
+    duration,
+  });
+}
+
+// =================================================================
+// WEBSOCKET
+// =================================================================
+function connectWS() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => {
+    state.wsConnected = true;
+    setLink('ONLINE', 'ok');
+    logEvent('sys', 'websocket connected', 'success');
+  };
+  ws.onclose = () => {
+    state.wsConnected = false;
+    setLink('OFFLINE', 'err');
+    logEvent('sys', 'websocket closed, retrying…', 'error');
+    setTimeout(connectWS, 2000);
+  };
+  ws.onerror = () => setLink('ERROR', 'err');
+  ws.onmessage = (ev) => {
+    try {
+      handleMsg(JSON.parse(ev.data));
+    } catch (e) { console.error(e); }
+  };
+}
+
+function handleMsg(msg) {
+  if (msg.type === 'telemetry_update' && msg.payload?.lat != null && msg.payload?.lon != null) {
+    const id = msg.topic.split('/')[1];
+    upsertDrone(id, {
+      lat: msg.payload.lat,
+      lon: msg.payload.lon,
+      alt: msg.payload.alt,
     });
-  } catch (e) {
-    console.error("Не удалось загрузить флот:", e);
+    renderDrone(id);
+    return;
   }
-}
-function fmtCoord(x){ return x!=null ? (+x).toFixed(6) : ""; }
-loadFleet();
-let fleetRefreshTimer = null;
-function scheduleFleetRefreshSoon(){
-  clearTimeout(fleetRefreshTimer);
-  fleetRefreshTimer = setTimeout(loadFleet, 300);
-}
 
-// Свободные дроны в выпадающем списке Orders
-async function loadFreeDrones() {
-  try {
-    const res = await fetch("/api/drones");
-    const data = await res.json();
-    const list = Array.isArray(data) ? data : (data.drones || []);
-    const free = list.filter(d => !["BUSY","IN_MISSION","ERROR"].includes((d.status||"").toUpperCase()));
-    const select = document.getElementById("droneSelect");
-    select.innerHTML = "";
-    free.forEach((d) => {
-      const opt = document.createElement("option");
-      opt.value = d.id;
-      opt.textContent = `${d.name || d.id} (${d.status || "IDLE"})`;
-      select.appendChild(opt);
-    });
-  } catch (e) {
-    console.error("Не удалось загрузить свободных дронов:", e);
+  if (msg.type === 'drone_active' && msg.payload?.id) {
+    upsertDrone(msg.payload.id, msg.payload);
+    renderDrone(msg.payload.id);
+    return;
   }
-}
-loadFreeDrones();
-// периодически актуализируем
-setInterval(loadFreeDrones, 4000);
 
-// ========== Active Missions (под активными заказами) ==========
-async function loadActiveMissions() {
-  try {
-    const res = await fetch("/api/active_missions");
-    const data = await res.json();
-    const missions = data.missions || [];
-    const tbody = document.querySelector("#missions-table tbody");
-    tbody.innerHTML = "";
-    if (missions.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" style="color:#999;text-align:center;">— нет активных миссий —</td></tr>`;
-      return;
+  if (msg.type === 'mission_planned' && msg.payload?.waypoints) {
+    const mid = msg.topic.split('/')[1];
+    drawWaypoints(mid, msg.payload.waypoints);
+    logEvent('orch', `mission ${short(mid)} planned (${msg.payload.waypoints.length} wps)`);
+    return;
+  }
+
+  if (msg.type === 'mission_assigned' && msg.payload) {
+    const mid = msg.topic.split('/')[1];
+    logEvent(msg.payload.vehicle_id || 'orch', `${short(mid)} assigned`);
+    return;
+  }
+
+  if (msg.type === 'mission_progress' && msg.payload) {
+    const { vehicle_id, current, total } = msg.payload;
+    logEvent(vehicle_id, `wp ${current}/${total}`);
+    return;
+  }
+
+  if (msg.type === 'mission_status' && msg.payload) {
+    const { status, vehicle_id } = msg.payload;
+    const mid = msg.topic.split('/')[1];
+    const lvl = status === 'COMPLETED' ? 'success'
+             : (String(status).includes('FAILED') || status === 'ABORTED') ? 'error'
+             : '';
+    logEvent(vehicle_id || 'orch', `${short(mid)} → ${status}`, lvl);
+    if (status === 'COMPLETED') {
+      state.completedToday++;
+      clearWaypoints(mid);
+      clearTrail(vehicle_id);
+      updateKpis();
     }
-    missions.forEach((m) => {
-      const total = m.progress_total || 0;
-      const cur = m.progress_current || 0;
-      const pct = total > 0 ? Math.round((cur / total) * 100) : 0;
-      const pos = lastDronePos[m.vehicle_id];
-      const posStr = pos
-        ? `${(+pos.lat).toFixed(5)}, ${(+pos.lon).toFixed(5)} / ${(+pos.alt).toFixed(1)}m`
-        : "—";
-      const statusClass = `m-status-${m.status || "PLANNED"}`;
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${m.mission_id}</td>
-        <td>${m.vehicle_id || "—"}</td>
-        <td class="${statusClass}">${m.status || ""}</td>
-        <td>
-          <span class="progress-bar"><span style="width:${pct}%"></span></span>
-          ${cur}/${total}
-        </td>
-        <td>${posStr}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  } catch (e) {
-    console.error("Не удалось загрузить активные миссии:", e);
+    return;
   }
 }
-loadActiveMissions();
-setInterval(loadActiveMissions, 2000);
 
-let missionsRefreshTimer = null;
-function scheduleMissionsRefreshSoon() {
-  clearTimeout(missionsRefreshTimer);
-  missionsRefreshTimer = setTimeout(loadActiveMissions, 200);
+// =================================================================
+// DRONES
+// =================================================================
+function upsertDrone(id, upd) {
+  const prev = state.drones.get(id) || { id, name: id, status: 'IDLE' };
+  const next = { ...prev, ...upd };
+  if (prev.lat != null && (prev.lat !== next.lat || prev.lon !== next.lon)) {
+    const dy = next.lat - prev.lat;
+    const dx = (next.lon - prev.lon) * Math.cos(next.lat * Math.PI / 180);
+    if (dx * dx + dy * dy > 1e-12) {
+      next.heading = Math.atan2(dx, dy) * 180 / Math.PI;
+    }
+  }
+  state.drones.set(id, next);
+  if (next.lat != null && next.lon != null) {
+    pushTrail(id, next.lon, next.lat, next.alt);
+  }
+  updateCard(id);
+  updateKpis();
 }
+
+function pushTrail(id, lon, lat, alt) {
+  if (!state.trajectories.has(id)) state.trajectories.set(id, []);
+  const arr = state.trajectories.get(id);
+  const n = arr.length;
+  if (n > 0) {
+    const [plon, plat, palt] = arr[n - 1];
+    if (Math.abs(plon - lon) < 1e-7 && Math.abs(plat - lat) < 1e-7 && Math.abs((palt || 0) - (alt || 0)) < 0.3) return;
+  }
+  arr.push([lon, lat, Math.max(0, alt || 0)]);
+  if (arr.length > 600) arr.shift();
+  renderTrail(id);
+}
+
+function renderDrone(id) {
+  const d = state.drones.get(id);
+  if (!d || d.lat == null || d.lon == null) return;
+  const alt = Math.max(0.1, d.alt || 0);
+  const pos = Cesium.Cartesian3.fromDegrees(d.lon, d.lat, alt);
+  const color = Cesium.Color.fromCssColorString(statusColor(d.status));
+
+  let ent = state.entities.drones.get(id);
+  if (!ent) {
+    ent = viewer.entities.add({
+      position: pos,
+      point: {
+        pixelSize: 16,
+        color,
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text: d.name || id,
+        font: '700 11px "JetBrains Mono", monospace',
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 3,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -20),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    });
+    state.entities.drones.set(id, ent);
+  } else {
+    ent.position = pos;
+    ent.point.color = color;
+  }
+
+  let leader = state.entities.leaderLines.get(id);
+  if (!leader) {
+    leader = viewer.entities.add({
+      polyline: {
+        positions: new Cesium.CallbackProperty(() => {
+          const dd = state.drones.get(id);
+          if (!dd || dd.lat == null) return [];
+          const aN = Math.max(0.1, dd.alt || 0);
+          return [
+            Cesium.Cartesian3.fromDegrees(dd.lon, dd.lat, aN),
+            Cesium.Cartesian3.fromDegrees(dd.lon, dd.lat, 0),
+          ];
+        }, false),
+        width: 1.5,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: color.withAlpha(0.6),
+          dashLength: 8.0,
+        }),
+      },
+    });
+    state.entities.leaderLines.set(id, leader);
+  } else {
+    leader.polyline.material = new Cesium.PolylineDashMaterialProperty({
+      color: color.withAlpha(0.6),
+      dashLength: 8.0,
+    });
+  }
+
+  let shadow = state.entities.shadows.get(id);
+  if (!shadow) {
+    shadow = viewer.entities.add({
+      position: new Cesium.CallbackProperty(() => {
+        const dd = state.drones.get(id);
+        return Cesium.Cartesian3.fromDegrees(dd.lon, dd.lat, 0);
+      }, false),
+      ellipse: {
+        semiMinorAxis: 4.5,
+        semiMajorAxis: 4.5,
+        material: color.withAlpha(0.35),
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+    });
+    state.entities.shadows.set(id, shadow);
+  } else {
+    shadow.ellipse.material = color.withAlpha(0.35);
+  }
+}
+
+function renderTrail(id) {
+  const pts = state.trajectories.get(id);
+  if (!pts || pts.length < 2) return;
+  const flat = [];
+  pts.forEach(([lon, lat, alt]) => flat.push(lon, lat, alt));
+  const positions = Cesium.Cartesian3.fromDegreesArrayHeights(flat);
+  const d = state.drones.get(id);
+  const color = Cesium.Color.fromCssColorString(statusColor(d?.status || 'FLYING')).withAlpha(0.65);
+
+  let trail = state.entities.trails.get(id);
+  if (!trail) {
+    trail = viewer.entities.add({
+      polyline: { positions, width: 3, material: color },
+    });
+    state.entities.trails.set(id, trail);
+  } else {
+    trail.polyline.positions = positions;
+    trail.polyline.material = color;
+  }
+}
+
+function clearTrail(id) {
+  if (!id) return;
+  const t = state.entities.trails.get(id);
+  if (t) { viewer.entities.remove(t); state.entities.trails.delete(id); }
+  state.trajectories.delete(id);
+}
+
+// =================================================================
+// WAYPOINTS
+// =================================================================
+function drawWaypoints(mid, wps) {
+  clearWaypoints(mid);
+  const arr = [];
+  const pathPts = [];
+
+  wps.forEach((wp, idx) => {
+    const p = wp.pos || wp;
+    const lat = p.lat, lon = p.lon;
+    const alt = Math.max(1, p.alt || 1);
+    const kind = String(wp.kind || 'NAV').toUpperCase();
+    const css = kind === 'TAKEOFF' ? '#fbbf24'
+              : kind === 'LAND' ? '#22c55e'
+              : '#5eead4';
+    const color = Cesium.Color.fromCssColorString(css);
+
+    const ent = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, alt / 2),
+      cylinder: {
+        length: Math.max(alt, 2),
+        topRadius: 4.0,
+        bottomRadius: 4.0,
+        material: color.withAlpha(0.35),
+        outline: true,
+        outlineColor: color,
+      },
+      label: {
+        text: kind === 'TAKEOFF' ? '▲ TAKEOFF'
+             : kind === 'LAND' ? '▼ LAND'
+             : `WP${idx}`,
+        font: '700 10px "JetBrains Mono", monospace',
+        fillColor: color,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 3,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -alt * 0.5 - 8),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    });
+    arr.push(ent);
+    pathPts.push(lon, lat, alt);
+  });
+  state.entities.waypoints.set(mid, arr);
+
+  if (pathPts.length >= 6) {
+    const pathEnt = viewer.entities.add({
+      polyline: {
+        positions: Cesium.Cartesian3.fromDegreesArrayHeights(pathPts),
+        width: 1.5,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: Cesium.Color.fromCssColorString('#5eead4').withAlpha(0.55),
+          dashLength: 16.0,
+        }),
+      },
+    });
+    state.entities.missionPaths.set(mid, pathEnt);
+  }
+}
+
+function clearWaypoints(mid) {
+  const arr = state.entities.waypoints.get(mid) || [];
+  arr.forEach((e) => viewer.entities.remove(e));
+  state.entities.waypoints.delete(mid);
+  const p = state.entities.missionPaths.get(mid);
+  if (p) viewer.entities.remove(p);
+  state.entities.missionPaths.delete(mid);
+}
+
+// =================================================================
+// CARDS / MISSIONS / KPI
+// =================================================================
+function updateCard(id) {
+  const d = state.drones.get(id);
+  if (!d) return;
+  const container = document.getElementById('drone-cards');
+  let row = document.getElementById(`drone-card-${id}`);
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'drone-card';
+    row.id = `drone-card-${id}`;
+    row.addEventListener('click', () => {
+      document.querySelectorAll('.drone-card').forEach((c) => c.classList.remove('selected'));
+      row.classList.add('selected');
+      flyToDrone(id);
+    });
+    container.appendChild(row);
+  }
+  const mission = [...state.missions.values()].find(
+    (m) => m.vehicle_id === id && m.status !== 'COMPLETED' && m.status !== 'ABORTED'
+  );
+  const cur = mission?.progress_current ?? 0;
+  const tot = mission?.progress_total ?? 0;
+  const pct = tot > 0 ? Math.round(100 * cur / tot) : 0;
+
+  row.innerHTML = `
+    <div class="drone-card-head">
+      <span class="drone-name">${esc(d.name || id)}</span>
+      <span class="chip ${d.status || 'IDLE'}">${d.status || 'IDLE'}</span>
+    </div>
+    <div class="metrics">
+      <div class="metric"><span class="metric-label">ALT</span><span class="metric-value">${fmt(d.alt, 1)}m</span></div>
+      <div class="metric"><span class="metric-label">LAT</span><span class="metric-value">${fmt(d.lat, 5)}</span></div>
+      <div class="metric"><span class="metric-label">LON</span><span class="metric-value">${fmt(d.lon, 5)}</span></div>
+    </div>
+    ${mission ? `
+      <div class="progress-wrap">
+        <div class="progress-bar"><span style="width:${pct}%"></span></div>
+        <span class="mono">${cur}/${tot}</span>
+      </div>` : `<div class="no-mission">no active mission</div>`}
+  `;
+  document.getElementById('fleet-count').textContent = state.drones.size;
+}
+
+function flyToDrone(id) {
+  const d = state.drones.get(id);
+  if (!d || d.lat == null) return;
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(d.lon, d.lat - 0.002, Math.max(400, (d.alt || 0) + 350)),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-40), roll: 0 },
+    duration: 1.2,
+  });
+}
+
+function updateKpis() {
+  const drones = [...state.drones.values()];
+  const total = drones.length;
+  const avail = drones.filter((d) => d.status === 'IDLE' || d.status === 'ACTIVE').length;
+  const flying = drones.filter((d) => d.status === 'FLYING').length;
+  document.getElementById('kpi-active').textContent = `${avail}/${total}`;
+  document.getElementById('kpi-flight').textContent = String(flying);
+  document.getElementById('kpi-missions').textContent = String(state.completedToday);
+}
+
+function setLink(text, level) {
+  const box = document.getElementById('kpi-link-box');
+  box.classList.remove('error');
+  if (level === 'err') box.classList.add('error');
+  document.getElementById('kpi-link').textContent = text;
+}
+
+async function refreshFleet() {
+  try {
+    const res = await fetch('/api/fleet');
+    const data = await res.json();
+    (data.fleet || []).forEach((d) => {
+      upsertDrone(d.id, d);
+      renderDrone(d.id);
+    });
+    updateKpis();
+  } catch { /* silent */ }
+}
+
+async function refreshMissions() {
+  try {
+    const res = await fetch('/api/active_missions');
+    const data = await res.json();
+    const ms = data.missions || [];
+    state.missions = new Map(ms.map((m) => [m.mission_id, m]));
+    renderMissionsList();
+    document.getElementById('missions-count').textContent = ms.length;
+    state.drones.forEach((_, id) => updateCard(id));
+  } catch { /* silent */ }
+}
+
+function renderMissionsList() {
+  const c = document.getElementById('missions-list');
+  if (state.missions.size === 0) {
+    c.innerHTML = `<div style="padding:14px;text-align:center;color:var(--text-mute);font-size:11px;letter-spacing:0.1em;">— NO ACTIVE MISSIONS —</div>`;
+    return;
+  }
+  c.innerHTML = '';
+  [...state.missions.values()].forEach((m) => {
+    const cur = m.progress_current ?? 0;
+    const tot = m.progress_total ?? 0;
+    const pct = tot > 0 ? Math.round(100 * cur / tot) : 0;
+    const row = document.createElement('div');
+    row.className = 'mission-row';
+    row.innerHTML = `
+      <div class="mission-head">
+        <span class="mission-id">${short(m.mission_id)}</span>
+        <span class="mission-veh">${esc(m.vehicle_id || '—')}</span>
+      </div>
+      <div class="mission-foot">
+        <span class="chip ${m.status}">${m.status}</span>
+        <span class="mono">${cur}/${tot}</span>
+      </div>
+      <div class="progress-bar"><span style="width:${pct}%"></span></div>
+    `;
+    c.appendChild(row);
+  });
+}
+
+// =================================================================
+// CLOCK + COMPASS
+// =================================================================
+function tickClock() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  document.getElementById('clock-time').textContent =
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  const h = Cesium.Math.toDegrees(viewer.camera.heading);
+  const norm = Math.round(((h % 360) + 360) % 360);
+  document.getElementById('hud-heading').textContent = String(norm).padStart(3, '0') + '°';
+}
+
+// =================================================================
+// EVENT LOG
+// =================================================================
+function logEvent(veh, msg, level = '') {
+  const log = document.getElementById('event-log');
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ts = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const row = document.createElement('div');
+  row.className = `event-row ${level || ''}`;
+  row.innerHTML = `
+    <span class="event-ts">${ts}</span>
+    <span class="event-veh">${esc(veh)}</span>
+    <span class="event-msg">${esc(msg)}</span>
+  `;
+  log.insertBefore(row, log.firstChild);
+  while (log.children.length > 250) log.removeChild(log.lastChild);
+}
+
+// =================================================================
+// MODAL / PICK
+// =================================================================
+function openModal() { document.getElementById('modal-bg').classList.remove('hidden'); }
+function closeModal() {
+  document.getElementById('modal-bg').classList.add('hidden');
+  cancelPick();
+}
+function startPick(t) {
+  state.pickingFor = t;
+  document.getElementById('pick-from').classList.toggle('active', t === 'from');
+  document.getElementById('pick-to').classList.toggle('active', t === 'to');
+  document.getElementById('pick-mode-label').textContent = t === 'from' ? 'PICKUP' : 'DROP';
+  document.getElementById('modal-bg').classList.add('hidden');
+  document.getElementById('pick-banner').classList.remove('hidden');
+}
+function cancelPick() {
+  state.pickingFor = null;
+  document.getElementById('pick-from').classList.remove('active');
+  document.getElementById('pick-to').classList.remove('active');
+  document.getElementById('pick-banner').classList.add('hidden');
+}
+
+// =================================================================
+// WIRING
+// =================================================================
+function wireUI() {
+  document.getElementById('fab-order').onclick = openModal;
+  document.getElementById('modal-close').onclick = closeModal;
+  document.getElementById('modal-cancel').onclick = closeModal;
+  document.getElementById('modal-submit').onclick = submitOrder;
+
+  document.getElementById('pick-from').onclick = () => startPick('from');
+  document.getElementById('pick-to').onclick = () => startPick('to');
+
+  document.getElementById('btn-perspective').onclick = () => flyToBase();
+  document.getElementById('btn-top-down').onclick = () => {
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(state.base.lon, state.base.lat, 3000),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+      duration: 1.2,
+    });
+  };
+  document.getElementById('btn-home').onclick = () => flyToBase();
+
+  document.getElementById('btn-clear-events').onclick = () => {
+    document.getElementById('event-log').innerHTML = '';
+  };
+
+  document.querySelectorAll('.mode-btn').forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll('.mode-btn').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      state.mode = b.dataset.mode;
+      const dock = document.getElementById('sandbox-dock');
+      if (state.mode === 'sandbox') {
+        dock.classList.remove('hidden');
+        logEvent('sys', 'SANDBOX mode enabled', 'warn');
+      } else {
+        dock.classList.add('hidden');
+        logEvent('sys', 'OPS mode enabled', 'success');
+      }
+    };
+  });
+
+  document.querySelectorAll('.sandbox-btn').forEach((b) => {
+    b.onclick = () => logEvent('sandbox', `action: ${b.dataset.action} · stub`, 'warn');
+  });
+
+  // map click → fill input
+  const handler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
+  handler.setInputAction((click) => {
+    if (!state.pickingFor) return;
+    const ray = viewer.camera.getPickRay(click.position);
+    const cart = ray && viewer.scene.globe.pick(ray, viewer.scene);
+    if (!cart) return;
+    const c = Cesium.Cartographic.fromCartesian(cart);
+    const lat = Cesium.Math.toDegrees(c.latitude);
+    const lon = Cesium.Math.toDegrees(c.longitude);
+    if (state.pickingFor === 'from') {
+      document.getElementById('from-lat').value = lat.toFixed(6);
+      document.getElementById('from-lon').value = lon.toFixed(6);
+    } else {
+      document.getElementById('to-lat').value = lat.toFixed(6);
+      document.getElementById('to-lon').value = lon.toFixed(6);
+    }
+    cancelPick();
+    openModal();
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (state.pickingFor) { cancelPick(); openModal(); }
+    else if (!document.getElementById('modal-bg').classList.contains('hidden')) closeModal();
+  });
+}
+
+async function submitOrder() {
+  const fLat = +document.getElementById('from-lat').value;
+  const fLon = +document.getElementById('from-lon').value;
+  const tLat = +document.getElementById('to-lat').value;
+  const tLon = +document.getElementById('to-lon').value;
+  const weight = +document.getElementById('weight').value || 2;
+
+  if (!fLat || !fLon || !tLat || !tLon) {
+    logEvent('orch', 'order: missing coordinates', 'error');
+    return;
+  }
+  try {
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: { lat: fLat, lon: fLon, alt: 60 },
+        to: { lat: tLat, lon: tLon, alt: 60 },
+        weight,
+      }),
+    });
+    const data = await res.json();
+    logEvent('orch', `order ${short(data.order_id)} dispatched`, 'success');
+    closeModal();
+  } catch (e) {
+    logEvent('orch', `dispatch failed: ${e}`, 'error');
+  }
+}
+
+// =================================================================
+// UTIL
+// =================================================================
+function fmt(v, d) { return (v == null || isNaN(v)) ? '—' : (+v).toFixed(d); }
+function short(s) { return !s ? '—' : String(s).slice(0, 12); }
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+// =================================================================
+// START
+// =================================================================
+init().catch((e) => {
+  const el = document.getElementById('boot-error');
+  el.textContent = `INIT ERROR\n${e.message}`;
+  el.classList.remove('hidden');
+});

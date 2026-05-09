@@ -15,6 +15,9 @@ from drone_core.infra.repositories.missions_mem import MissionsMem
 from drone_core.domain.models import Order, LLA
 from drone_core.infra.messaging.mqtt_bus import MqttBus
 
+from .launcher import router as launcher_router
+from .real import router as real_router
+
 # --- пути и настройки ---
 APP_ROOT = Path(__file__).parents[1]
 SIM_CFG = APP_ROOT / "simulator" / "config.yaml"
@@ -26,6 +29,11 @@ app.mount(
     StaticFiles(directory=str(APP_ROOT / "web_ui" / "static")),
     name="static",
 )
+
+# Лаунчер (страница выбора режима, /) и раздел real-drone (форма, профили, /real).
+# Подключаем ПЕРЕД остальными роутами, чтобы / отдавал лаунчер.
+app.include_router(launcher_router)
+app.include_router(real_router)
 
 settings = Settings()
 bus = MqttBus(settings.MQTT_URL, client_id="ui-bus")
@@ -195,8 +203,10 @@ async def _startup():
 
 
 # === Маршруты API ===
-@app.get("/")
-async def index():
+# `/` обслуживает launcher_router (страница выбора режима).
+# UI симулятора живёт на `/sim`.
+@app.get("/sim")
+async def sim_index():
     return FileResponse(str(APP_ROOT / "web_ui" / "static" / "index.html"))
 
 

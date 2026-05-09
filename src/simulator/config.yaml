@@ -7,24 +7,31 @@ base:
   lon: -89.38420
 
 simulator:
-  num_drones: 2
+  num_drones: 2  # дефолт если лаунчер не передал N (legacy run_system.py)
   model: "none"
   home:
     lat: 43.0747
     lon: -89.3842
     alt: 0.0
 
+# Список из 10 заготовленных дронов. Лаунчер берёт первые N штук
+# (cfg["drones"][:N]) согласно слайдеру 1..10. Home-позиции разнесены
+# в сетку 4×3 с шагом ~12м (1.5e-4 град), чтобы дроны не сливались
+# в одну точку на карте.
+#
+# Порты:
+#   mavlink_out = 14540 + i  (PX4 шлёт активно через mavlink start -o)
+#   gRPC       = 50151 + i  (mavsdk_server каждого bridge'а)
+#   instance   = i           (PX4 -i N для multi-drone)
 drones:
-  # mavlink_out = offboard-link remote port PX4 (14540 + instance).
-  # PX4 шлёт туда активно (mavlink start -o), MAVSDK listen на этот порт.
-  # Для multi-drone каждый System() получает уникальный gRPC-порт (grpc_port),
-  # иначе два mavsdk_server конфликтуют.
   - id: 0
     name: "sim_drone_1"
     px4_path: "PX4-Autopilot"
     udp_port: 14540
     mavlink_out: 14540
     instance: 0
+    home_lat: 43.07455
+    home_lon: -89.384425
 
   - id: 1
     name: "sim_drone_2"
@@ -32,3 +39,77 @@ drones:
     udp_port: 14541
     mavlink_out: 14541
     instance: 1
+    home_lat: 43.07455
+    home_lon: -89.384275
+
+  - id: 2
+    name: "sim_drone_3"
+    px4_path: "PX4-Autopilot"
+    udp_port: 14542
+    mavlink_out: 14542
+    instance: 2
+    home_lat: 43.07455
+    home_lon: -89.384125
+
+  - id: 3
+    name: "sim_drone_4"
+    px4_path: "PX4-Autopilot"
+    udp_port: 14543
+    mavlink_out: 14543
+    instance: 3
+    home_lat: 43.07455
+    home_lon: -89.383975
+
+  - id: 4
+    name: "sim_drone_5"
+    px4_path: "PX4-Autopilot"
+    udp_port: 14544
+    mavlink_out: 14544
+    instance: 4
+    home_lat: 43.0747
+    home_lon: -89.384425
+
+  - id: 5
+    name: "sim_drone_6"
+    px4_path: "PX4-Autopilot"
+    udp_port: 14545
+    mavlink_out: 14545
+    instance: 5
+    home_lat: 43.0747
+    home_lon: -89.384275
+
+  - id: 6
+    name: "sim_drone_7"
+    px4_path: "PX4-Autopilot"
+    udp_port: 14546
+    mavlink_out: 14546
+    instance: 6
+    home_lat: 43.0747
+    home_lon: -89.384125
+
+  - id: 7
+    name: "sim_drone_8"
+    px4_path: "PX4-Autopilot"
+    udp_port: 14547
+    mavlink_out: 14547
+    instance: 7
+    home_lat: 43.0747
+    home_lon: -89.383975
+
+  - id: 8
+    name: "sim_drone_9"
+    px4_path: "PX4-Autopilot"
+    udp_port: 14548
+    mavlink_out: 14548
+    instance: 8
+    home_lat: 43.07485
+    home_lon: -89.384425
+
+  - id: 9
+    name: "sim_drone_10"
+    px4_path: "PX4-Autopilot"
+    udp_port: 14549
+    mavlink_out: 14549
+    instance: 9
+    home_lat: 43.07485
+    home_lon: -89.384275

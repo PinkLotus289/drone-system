@@ -41,8 +41,10 @@ async def wait_for_px4_ready(proc, instance, ready_event: threading.Event, timeo
 def make_env(drone):
     env = os.environ.copy()
     env["PX4_SIM_MODEL"] = "sihsim_quadx"
-    env["PX4_HOME_LAT"] = "43.0747"
-    env["PX4_HOME_LON"] = "-89.3842"
+    # Per-drone home-позиция, если задана в drone-dict (sim_supervisor так делает
+    # для grid-layout). Иначе fallback на исторический хардкод (Madison, WI).
+    env["PX4_HOME_LAT"] = str(drone.get("home_lat", 43.0747))
+    env["PX4_HOME_LON"] = str(drone.get("home_lon", -89.3842))
     # PX4_HOME_ALT намеренно не задаём — иначе PX4 интерпретирует TAKEOFF-altitude
     # как AMSL и кидает WARN "Already higher than takeoff altitude".
     # Портами mavlink управляет px4-rc.mavlink на основе $px4_instance (-i N):

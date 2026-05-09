@@ -2,95 +2,205 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Drone System Dashboard</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" crossorigin />
-  <link rel="stylesheet" href="/static/style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Drone Ops · Mission Control · v3</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <script>
+    window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/';
+  </script>
+  <link href="https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Cesium.js"></script>
+
+  <link rel="stylesheet" href="/static/style.css?v=4" />
 </head>
 <body>
-  <header>
-    <h1>Drone System Dashboard</h1>
-    <nav>
-      <button class="tab-btn active" data-tab="orders">🛰️ Orders</button>
-      <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
-      <button class="tab-btn" data-tab="fleet">🚁 Fleet</button>
-    </nav>
-  </header>
 
-  <main>
-    <!-- Orders -->
-    <section id="orders" class="tab active">
-      <div id="orders-panel">
-        <h2>Создать заказ</h2>
-        <form id="orderForm">
-          <label>Пункт A (забрать):</label><br />
-          <input id="from-lat" placeholder="lat" type="number" step="0.000001" />
-          <input id="from-lon" placeholder="lon" type="number" step="0.000001" /><br />
+<header class="topbar">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
+      <circle cx="12" cy="12" r="3" fill="currentColor"/>
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="1.5"/>
+    </svg>
+    <div class="brand-text">
+      <div class="brand-title">DRONE OPS</div>
+      <div class="brand-sub">MISSION CONTROL</div>
+    </div>
+  </div>
 
-          <label>Пункт B (доставить):</label><br />
-          <input id="to-lat" placeholder="lat" type="number" step="0.000001" />
-          <input id="to-lon" placeholder="lon" type="number" step="0.000001" /><br />
+  <div class="mode-toggle">
+    <button class="mode-btn active" data-mode="ops">OPS</button>
+    <button class="mode-btn" data-mode="sandbox">SANDBOX</button>
+  </div>
 
-          <label>Дрон:</label>
-          <select id="droneSelect"></select><br />
+  <div class="topbar-spacer"></div>
 
-          <label>Вес груза (кг):</label>
-          <input id="orderWeight" type="number" value="5" step="0.1" /><br />
+  <div class="kpi-bar">
+    <div class="kpi"><div class="kpi-label">ACTIVE</div><div class="kpi-value" id="kpi-active">0/0</div></div>
+    <div class="kpi"><div class="kpi-label">IN&nbsp;FLIGHT</div><div class="kpi-value" id="kpi-flight">0</div></div>
+    <div class="kpi"><div class="kpi-label">DONE</div><div class="kpi-value" id="kpi-missions">0</div></div>
+    <div class="kpi" id="kpi-link-box"><div class="kpi-label">LINK</div><div class="kpi-value" id="kpi-link">—</div></div>
+  </div>
 
-          <button type="submit">Создать заказ</button>
-        </form>
+  <div class="clock">
+    <div id="clock-time" class="mono">--:--:--</div>
+    <div class="clock-tz">UTC</div>
+  </div>
 
-        <h3>Активные заказы</h3>
-        <ul id="orders-list"></ul>
+  <button id="btn-exit-launcher" class="exit-btn"
+          title="Остановить симуляцию (PX4 + bridges + workers) и вернуться к лаунчеру">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M9 18l-6-6 6-6"/><path d="M3 12h13"/><path d="M21 19V5"/>
+    </svg>
+    <span>EXIT</span>
+  </button>
+</header>
 
-        <h3>Активные полёты</h3>
-        <table id="missions-table">
-          <thead>
-            <tr>
-              <th>Миссия</th>
-              <th>Дрон</th>
-              <th>Статус</th>
-              <th>Progress</th>
-              <th>Позиция</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+<div id="exit-overlay" class="exit-overlay hidden">
+  <div class="exit-card">
+    <div class="exit-spinner"></div>
+    <div class="exit-text">Останавливаем симуляцию...</div>
+    <div class="exit-sub mono" id="exit-sub">PX4 SITL · MAVSDK bridges · workers</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const btn = document.getElementById("btn-exit-launcher");
+  const overlay = document.getElementById("exit-overlay");
+  const sub = document.getElementById("exit-sub");
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    if (!confirm("Остановить симуляцию и вернуться к лаунчеру?\n\nВсе PX4-инстансы, MAVSDK bridges и workers будут завершены.")) return;
+    btn.disabled = true;
+    overlay.classList.remove("hidden");
+    try {
+      const r = await fetch("/api/launcher/sim/stop", { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      sub.textContent = j.ok ? "✓ остановлено · перехожу на /" : "⚠ ответ сервера: " + JSON.stringify(j);
+    } catch (e) {
+      sub.textContent = "⚠ сеть/сервер: " + e.message + " — всё равно ухожу на /";
+    }
+    setTimeout(() => { window.location.href = "/"; }, 600);
+  });
+})();
+</script>
+
+<main class="app">
+  <aside class="left-strip">
+    <div class="panel-head">
+      <span>FLEET</span>
+      <span class="panel-count mono" id="fleet-count">0</span>
+    </div>
+    <div class="scroll" id="drone-cards"></div>
+
+    <div class="sidebar-legend">
+      <div class="legend-title">LEGEND</div>
+      <div class="legend-row"><span class="lg-dot" style="background:#5eead4"></span>BASE</div>
+      <div class="legend-row"><span class="lg-dot" style="background:#60a5fa"></span>DRONE</div>
+      <div class="legend-row"><span class="lg-dot" style="background:#fbbf24"></span>TAKEOFF WP</div>
+      <div class="legend-row"><span class="lg-dot" style="background:#5eead4"></span>NAV WP</div>
+      <div class="legend-row"><span class="lg-dot" style="background:#22c55e"></span>LAND WP</div>
+    </div>
+  </aside>
+
+  <section class="map-wrap">
+    <div id="cesium"></div>
+
+    <div class="hud-right">
+      <div class="compass">
+        <div class="compass-label">HDG</div>
+        <div class="compass-value mono" id="hud-heading">000°</div>
       </div>
+      <button class="hud-btn" id="btn-perspective" title="Perspective 3D">∠</button>
+      <button class="hud-btn" id="btn-top-down" title="Top-down">⊙</button>
+      <button class="hud-btn" id="btn-home" title="Center on base">⌂</button>
+    </div>
 
-      <div id="map"></div>
-    </section>
+    <button class="fab" id="fab-order" title="New mission">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </button>
 
-    <!-- Settings -->
-    <section id="settings" class="tab">
-      <div id="settings-panel">
-        <h2>Настройки</h2>
-        <label>Координаты базы:</label><br />
-        <input id="base-lat" placeholder="lat" type="number" step="0.000001" />
-        <input id="base-lon" placeholder="lon" type="number" step="0.000001" /><br />
-        <button id="reload-base">Обновить базу</button>
+    <div class="pick-banner hidden" id="pick-banner">
+      CLICK ON MAP to set <b id="pick-mode-label">PICKUP</b> · <span class="kbd">ESC</span> to cancel
+    </div>
+  </section>
+
+  <aside class="right-panel">
+    <div class="panel-head">
+      <span>ACTIVE MISSIONS</span>
+      <span class="panel-count mono" id="missions-count">0</span>
+    </div>
+    <div class="missions-list" id="missions-list"></div>
+
+    <div class="panel-head">
+      <span>EVENT STREAM</span>
+      <button class="icon-btn" id="btn-clear-events" title="Clear log">⌫</button>
+    </div>
+    <div class="event-log mono" id="event-log"></div>
+  </aside>
+</main>
+
+<div class="sandbox-dock hidden" id="sandbox-dock">
+  <span class="sandbox-title">SANDBOX TOOLS</span>
+  <button class="sandbox-btn" data-action="inject-gps-loss">GPS LOSS</button>
+  <button class="sandbox-btn" data-action="drain-battery">DRAIN BATT</button>
+  <button class="sandbox-btn" data-action="wind">WIND +10 m/s</button>
+  <button class="sandbox-btn" data-action="spawn">SPAWN DRONE</button>
+  <span class="sandbox-note">virtual-mode tools</span>
+</div>
+
+<div class="modal-bg hidden" id="modal-bg">
+  <div class="modal">
+    <div class="modal-head">
+      <span>NEW MISSION ORDER</span>
+      <button class="icon-btn" id="modal-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-tip">Enter coordinates or <b>PICK</b> them on the map.</div>
+      <div class="field">
+        <label>PICKUP</label>
+        <div class="field-inputs">
+          <input type="number" id="from-lat" step="0.000001" placeholder="lat" class="mono" />
+          <input type="number" id="from-lon" step="0.000001" placeholder="lon" class="mono" />
+          <button class="mini-btn" id="pick-from">PICK</button>
+        </div>
       </div>
-    </section>
-
-    <!-- Fleet -->
-    <section id="fleet" class="tab">
-      <div id="fleet-panel">
-        <h2>Флот дронов</h2>
-        <table id="fleet-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Статус</th>
-              <th>Координаты</th>
-              <th>Высота</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+      <div class="field">
+        <label>DROP</label>
+        <div class="field-inputs">
+          <input type="number" id="to-lat" step="0.000001" placeholder="lat" class="mono" />
+          <input type="number" id="to-lon" step="0.000001" placeholder="lon" class="mono" />
+          <button class="mini-btn" id="pick-to">PICK</button>
+        </div>
       </div>
-    </section>
-  </main>
+      <div class="field">
+        <label>PAYLOAD</label>
+        <div class="field-inputs">
+          <input type="number" id="weight" step="0.1" value="2.0" class="mono" />
+          <span class="unit">kg</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-secondary" id="modal-cancel">CANCEL</button>
+      <button class="btn-primary" id="modal-submit">DISPATCH</button>
+    </div>
+  </div>
+</div>
 
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js" crossorigin></script>
-  <script src="/static/app.js"></script>
+<div id="boot-error" class="boot-error hidden"></div>
+
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>
