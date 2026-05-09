@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Cesium tile sanity</title>
+<style>
+html,body,#map { margin:0; padding:0; width:100%; height:100vh; background:#000; color:#fff; font-family: monospace; }
+#log { position: fixed; top: 8px; left: 8px; background: rgba(0,0,0,0.8); padding: 10px; font-size: 12px; z-index: 9; max-width: 420px; }
+</style>
+<script>window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/';</script>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Cesium.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
+</head>
+<body>
+<div id="log">Cesium: <span id="cv">?</span><br>Tiles requested: <span id="tr">0</span><br>Tiles loaded: <span id="tl">0</span><br>Tiles failed: <span id="tf">0</span></div>
+<div id="map"></div>
+<script>
+document.getElementById('cv').textContent = (typeof Cesium !== 'undefined') ? (Cesium.VERSION || 'loaded') : 'NOT LOADED';
+if (typeof Cesium === 'undefined') throw new Error('no Cesium');
+
+const provider = new Cesium.UrlTemplateImageryProvider({
+  url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  credit: 'OSM',
+  maximumLevel: 19,
+});
+
+let req = 0, ok = 0, fail = 0;
+const origRequestImage = provider.requestImage.bind(provider);
+provider.requestImage = function(x, y, level, request) {
+  req++; document.getElementById('tr').textContent = req;
+  const p = origRequestImage(x, y, level, request);
+  if (p && p.then) {
+    p.then(() => { ok++; document.getElementById('tl').textContent = ok; },
+           (e) => { fail++; document.getElementById('tf').textContent = fail; console.error('tile fail', e); });
+  }
+  return p;
+};
+
+const viewer = new Cesium.Viewer('map', {
+  baseLayerPicker: false, timeline: false, animation: false,
+  geocoder: false, homeButton: false, navigationHelpButton: false,
+  sceneModePicker: false, fullscreenButton: false, infoBox: false, selectionIndicator: false,
+  imageryProvider: false,
+});
+viewer.imageryLayers.addImageryProvider(provider);
+viewer.scene.skyBox.show = false; viewer.scene.sun.show = false;
+viewer.camera.flyTo({
+  destination: Cesium.Cartesian3.fromDegrees(-89.3842, 43.0747, 4000),
+  orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
+  duration: 0,
+});
+</script>
+</body>
+</html>

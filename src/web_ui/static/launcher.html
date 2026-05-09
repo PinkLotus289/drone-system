@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Drone Ops · Launcher</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/static/style.css?v=3" />
+  <link rel="stylesheet" href="/static/launcher.css?v=1" />
+</head>
+<body class="launcher-body">
+
+<header class="topbar">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
+      <circle cx="12" cy="12" r="3" fill="currentColor"/>
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="1.5"/>
+    </svg>
+    <div class="brand-text">
+      <div class="brand-title">DRONE OPS</div>
+      <div class="brand-sub">LAUNCHER</div>
+    </div>
+  </div>
+  <div class="topbar-spacer"></div>
+  <div class="clock">
+    <div id="clock-time" class="mono">--:--:--</div>
+    <div class="clock-tz">UTC</div>
+  </div>
+</header>
+
+<main class="launcher-main">
+  <div class="launcher-hero">
+    <div class="hero-eyebrow">SELECT OPERATING MODE</div>
+    <div class="hero-title">Что запускаем сегодня?</div>
+    <div class="hero-sub">Выбери один из режимов работы. Можно сменить позже, остановив текущий и вернувшись на эту страницу.</div>
+  </div>
+
+  <div class="launcher-grid">
+
+    <div class="launcher-card" id="card-sim" data-mode="sim">
+      <div class="card-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M3 9h18M9 3v18" />
+        </svg>
+      </div>
+      <div class="card-tag">SIMULATION</div>
+      <div class="card-title">Симуляция</div>
+      <div class="card-desc">PX4 SITL + виртуальные дроны. Полный пайплайн для разработки и проверки логики миссий без реального борта.</div>
+      <div class="card-status" id="status-sim">
+        <span class="status-dot" data-state="stopped"></span>
+        <span class="status-text">stopped</span>
+      </div>
+      <div class="sim-config" id="sim-config">
+        <label class="sim-config-label" for="sim-num-drones">Дронов</label>
+        <button type="button" class="num-step" id="num-minus" aria-label="-1">−</button>
+        <input type="number" id="sim-num-drones" min="1" max="10" value="2" class="mono" />
+        <button type="button" class="num-step" id="num-plus" aria-label="+1">+</button>
+        <span class="sim-config-hint mono" id="num-hint">~250MB RAM/дрон</span>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-primary" id="btn-sim-start">▶️ Запустить</button>
+        <button class="btn btn-ghost hidden" id="btn-sim-open">🌐 Открыть UI</button>
+        <button class="btn btn-ghost hidden" id="btn-sim-stop">⏹ Остановить</button>
+      </div>
+    </div>
+
+    <div class="launcher-card accent-real" id="card-real" data-mode="real">
+      <div class="card-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 2L2 12l10 10 10-10z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      </div>
+      <div class="card-tag">REAL DRONE</div>
+      <div class="card-title">Подключить реальный дрон</div>
+      <div class="card-desc">Параметры подключения, проверка готовности борта (heartbeat/GPS/батарея/калибровки), сохранение профиля, тестовые мини-полёты.</div>
+      <div class="card-status">
+        <span class="status-dot" data-state="ready"></span>
+        <span class="status-text">готов к настройке</span>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-primary" id="btn-real-open">→ Открыть</button>
+      </div>
+    </div>
+
+    <div class="launcher-card disabled" id="card-fleet" data-mode="fleet">
+      <div class="card-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="6" cy="6" r="2" />
+          <circle cx="18" cy="6" r="2" />
+          <circle cx="6" cy="18" r="2" />
+          <circle cx="18" cy="18" r="2" />
+          <path d="M6 8v8M18 8v8M8 6h8M8 18h8" />
+        </svg>
+      </div>
+      <div class="card-tag">FLEET</div>
+      <div class="card-title">Управление полётами реальных дронов</div>
+      <div class="card-desc">Оркестрация флота из сохранённых профилей. Появится после готовности модуля «Подключить реальный дрон».</div>
+      <div class="card-status">
+        <span class="status-dot" data-state="disabled"></span>
+        <span class="status-text">скоро</span>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-disabled" disabled>в разработке</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="launcher-footer mono">
+    <span id="launcher-msg"></span>
+  </div>
+</main>
+
+<script src="/static/launcher.js?v=1"></script>
+</body>
+</html>
