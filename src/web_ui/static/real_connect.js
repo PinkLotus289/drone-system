@@ -60,7 +60,7 @@
   function clearForm() {
     activeName = null;
     lastTestOk = false;
-    $("form-title").textContent = "Подключение нового борта";
+    $("form-title").textContent = "New connection";
     $("btn-delete-profile").classList.add("hidden");
     $("real-form").reset();
     setConnType("serial");
@@ -102,8 +102,21 @@
   function updateSaveButton() {
     $("btn-save").disabled = !lastTestOk;
     $("btn-save").title = lastTestOk
-      ? "Сохранить профиль"
-      : "Сначала пройдите Test Connection";
+      ? "Save profile"
+      : "Run a successful Test Connection first";
+    const ready = document.getElementById("ready-state");
+    if (ready) {
+      ready.textContent = lastTestOk ? "✓ validated · ready to save" : "awaiting test";
+      ready.style.color = lastTestOk ? "var(--green)" : "var(--ink-3)";
+    }
+    // Step strip
+    document.querySelectorAll(".step").forEach(el => {
+      const n = +el.dataset.step;
+      el.classList.remove("active","done");
+      if (n < 3) el.classList.add("done");
+      else if (n === 3 && lastTestOk) el.classList.add("done");
+      else if (n === (lastTestOk ? 4 : 3)) el.classList.add("active");
+    });
   }
 
   // ========== API calls ==========
@@ -121,14 +134,14 @@
   async function loadSerialPorts() {
     const sel = $("f-serial-port");
     const hint = $("port-hint");
-    sel.innerHTML = '<option value="">обновляю...</option>';
+    sel.innerHTML = '<option value="">refreshing…</option>';
     try {
       const r = await fetch("/api/real/serial-ports");
       const j = await r.json();
       sel.innerHTML = "";
       if (!j.ports || j.ports.length === 0) {
-        sel.innerHTML = '<option value="">— нет доступных портов —</option>';
-        hint.textContent = "подключи кабель/радио и нажми ↻";
+        sel.innerHTML = '<option value="">— no ports detected —</option>';
+        hint.textContent = "connect cable/radio and press ↻";
         return;
       }
       for (const p of j.ports) {
@@ -137,21 +150,21 @@
         opt.textContent = p.hint ? `${p.label}  [${p.hint}]` : p.label;
         sel.appendChild(opt);
       }
-      hint.textContent = `найдено портов: ${j.ports.length}`;
+      hint.textContent = `found ${j.ports.length} port(s)`;
     } catch (e) {
-      hint.textContent = "ошибка: " + e.message;
+      hint.textContent = "error: " + e.message;
     }
   }
 
   async function deleteCurrent() {
     if (!activeName) return;
-    if (!confirm(`Удалить профиль "${activeName}"?`)) return;
+    if (!confirm(`Delete profile "${activeName}"?`)) return;
     const r = await fetch(`/api/real/profiles/${encodeURIComponent(activeName)}`, { method: "DELETE" });
     if (r.ok) {
       await loadProfiles();
       clearForm();
     } else {
-      alert("Не удалось удалить профиль");
+      alert("Failed to delete profile");
     }
   }
 
@@ -166,33 +179,32 @@
       const saved = await r.json();
       activeName = saved.name;
       await loadProfiles();
-      $("form-title").textContent = `Профиль: ${saved.name}`;
+      $("form-title").textContent = `Profile · ${saved.name}`;
       $("btn-delete-profile").classList.remove("hidden");
-      // Подсветка в сайдбаре
       document.querySelectorAll(".profile-item").forEach(el => {
         el.classList.toggle("active", el.dataset.name === saved.name);
       });
     } else {
       const err = await r.json().catch(() => ({}));
-      alert("Ошибка сохранения: " + (err.detail || r.statusText));
+      alert("Save failed: " + (err.detail || r.statusText));
     }
   }
 
   async function testConnection() {
     const body = readForm();
     if (body.connection_type === "serial" && !body.serial_port) {
-      alert("Выбери serial-порт");
+      alert("Select a serial port");
       return;
     }
     if (body.connection_type !== "serial" && (!body.net_port)) {
-      alert("Укажи host/port");
+      alert("Set host/port");
       return;
     }
 
     const card = $("test-results-card");
     card.classList.remove("hidden");
-    $("test-meta").textContent = "тестирую... heartbeat ждём до 12с";
-    $("check-grid").innerHTML = '<div class="check info"><div class="check-label">STATUS</div><div class="check-value">⏳ pending...</div></div>';
+    $("test-meta").textContent = "running… waiting for heartbeat up to 12 s";
+    $("check-grid").innerHTML = '<div class="check info"><div class="check-label">Status</div><div class="check-value">⏳ pending…</div></div>';
     $("raw-result").textContent = "";
 
     const startedAt = Date.now();
@@ -211,7 +223,7 @@
     const j = await r.json();
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
 
-    $("test-meta").textContent = `${elapsed}с · gRPC :${j.grpc_port || "?"} · ${j.connection_url}`;
+    $("test-meta").textContent = `${elapsed} s · gRPC :${j.grpc_port || "?"} · ${j.connection_url}`;
     renderChecks(j);
     $("raw-result").textContent = JSON.stringify(j, null, 2);
 
@@ -282,7 +294,7 @@
     $("profile-count").textContent = String(profiles.length);
     const list = $("profile-list");
     if (profiles.length === 0) {
-      list.innerHTML = '<div class="profile-empty">пусто — создайте профиль справа</div>';
+      list.innerHTML = '<div class="profile-empty">— no profiles yet — create one on the right</div>';
       return;
     }
     list.innerHTML = "";

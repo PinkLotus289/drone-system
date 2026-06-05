@@ -20,7 +20,9 @@ from .real import router as real_router
 
 # --- пути и настройки ---
 APP_ROOT = Path(__file__).parents[1]
+PROJECT_ROOT = APP_ROOT.parent
 SIM_CFG = APP_ROOT / "simulator" / "config.yaml"
+MISSION_CTX = PROJECT_ROOT / "config" / "mission_context.yaml"
 
 app = FastAPI(title="Drone System Dashboard")
 app.state: State
@@ -60,6 +62,10 @@ async def _startup():
     # Сохраняем активных дронов + активные миссии в памяти
     app.state.active_drones = {}
     app.state.active_missions = {}  # {mission_id: {...}}
+    # Буфер траекторий: {drone_id: [[lon,lat,alt], ...]} — чтобы трейлы переживали
+    # перезагрузку страницы (фронт восстанавливает их из снапшота при загрузке).
+    app.state.drone_trails = {}
+    _TRAIL_MAX = 600
 
     def _update_mission(mid: str, **fields):
         import time as _t
@@ -73,10 +79,14 @@ async def _startup():
         })
         m.update({k: v for k, v in fields.items() if v is not None})
         m["updated"] = _t.time()
-        # Уберём завершённые миссии через 30с (чтобы UI показал «COMPLETED» короткое время).
-        if m["status"] == "COMPLETED":
+        # Терминальную миссию (выполнена/отменена/ошибка) держим в списке ещё 20с
+        # (UI показывает её как COMPLETED/100% / failed), потом убираем — линия
+        # таймлайна исчезает. ABORTED/FAILED тоже чистим, иначе они зависают.
+        _status = str(m.get("status") or "")
+        _terminal = _status == "COMPLETED" or _status == "ABORTED" or "FAILED" in _status
+        if _terminal:
             async def _cleanup(_mid=mid):
-                await asyncio.sleep(30)
+                await asyncio.sleep(20)
                 app.state.active_missions.pop(_mid, None)
             main_loop.call_soon_threadsafe(asyncio.create_task, _cleanup())
 
@@ -119,32 +129,57 @@ async def _startup():
         elif topic.startswith("telem/"):
             msg["type"] = "telemetry_update"
 
-            # Извлекаем ID дрона из топика (например telem/veh_0/pose)
+            # Извлекаем ID дрона + тип потока: telem/veh_0/pose|battery|attitude|gps|velocity|actuators
             parts = topic.split("/")
             drone_id = parts[1] if len(parts) > 1 else "unknown"
+            stream = parts[2] if len(parts) > 2 else "pose"
 
-            # Если дрона ещё нет — добавляем его
-            if drone_id not in app.state.active_drones and isinstance(data, dict):
+            # Регистрируем дрона если его ещё нет
+            if drone_id not in app.state.active_drones:
                 app.state.active_drones[drone_id] = {
                     "id": drone_id,
                     "name": drone_id,
-                    "lat": data.get("lat"),
-                    "lon": data.get("lon"),
-                    "alt": data.get("alt", 0),
+                    "lat": None,
+                    "lon": None,
+                    "alt": 0,
                     "status": "ACTIVE",
                 }
-                #print(f"[UI] 🟢 Новый дрон зарегистрирован: {drone_id}")
 
-            # Если уже есть — обновляем координаты
-            elif isinstance(data, dict):
-                d = app.state.active_drones[drone_id]
-                d["lat"] = data.get("lat", d.get("lat"))
-                d["lon"] = data.get("lon", d.get("lon"))
-                d["alt"] = data.get("alt", d.get("alt"))
-
-            # Лог для проверки
-            #if isinstance(data, dict):
-                #print(f"[UI] 📡 Telemetry from {drone_id}: lat={data.get('lat')} lon={data.get('lon')}")
+            d = app.state.active_drones[drone_id]
+            if isinstance(data, dict):
+                # Маршрутизация по типу потока — обновляем подсектор state дрона
+                if stream == "pose":
+                    d["lat"] = data.get("lat", d.get("lat"))
+                    d["lon"] = data.get("lon", d.get("lon"))
+                    d["alt"] = data.get("alt", d.get("alt"))
+                    # копим трейл (формат [lon,lat,alt] как на фронте) с дедупом и капом
+                    try:
+                        plat = data.get("lat"); plon = data.get("lon")
+                        if plat is not None and plon is not None:
+                            buf = app.state.drone_trails.setdefault(drone_id, [])
+                            palt = float(data.get("alt") or 0.0)
+                            if (not buf) or abs(buf[-1][0] - plon) > 1e-7 or abs(buf[-1][1] - plat) > 1e-7 or abs((buf[-1][2] or 0) - palt) > 0.3:
+                                buf.append([float(plon), float(plat), max(0.0, palt)])
+                                if len(buf) > _TRAIL_MAX:
+                                    del buf[0:len(buf) - _TRAIL_MAX]
+                    except Exception:
+                        pass
+                elif stream == "battery":
+                    d["battery_v"] = data.get("voltage_v")
+                    d["battery_pct"] = data.get("remaining_pct")
+                elif stream == "attitude":
+                    d["pitch"] = data.get("pitch")
+                    d["roll"] = data.get("roll")
+                    d["yaw"] = data.get("yaw")
+                elif stream == "gps":
+                    d["sat_count"] = data.get("satellites")
+                    d["fix_type"] = data.get("fix_type")
+                elif stream == "velocity":
+                    d["gs"] = data.get("gs")
+                    d["vz"] = data.get("vz")
+                elif stream == "actuators":
+                    d["motors"] = data.get("motors")
+                    d["motors_active"] = data.get("active")
 
         elif topic.endswith("/planned"):
             msg["type"] = "mission_planned"
@@ -153,6 +188,9 @@ async def _startup():
                 _update_mission(
                     mid,
                     status="PLANNED",
+                    mission_type=data.get("mission_type", "delivery"),
+                    takeoff_profile=data.get("takeoff_profile", "vertical"),
+                    notes=data.get("notes"),
                     waypoints=data.get("waypoints", []),
                 )
         elif topic.endswith("/assigned"):
@@ -210,10 +248,73 @@ async def sim_index():
     return FileResponse(str(APP_ROOT / "web_ui" / "static" / "index.html"))
 
 
+@app.get("/testing")
+async def testing_page():
+    """Pre-flight testing wizard for real drones."""
+    return FileResponse(str(APP_ROOT / "web_ui" / "static" / "testing.html"))
+
+
+@app.get("/local_launch")
+async def local_launch_page():
+    """Direct-control launch page (single airframe, no mission plan)."""
+    return FileResponse(str(APP_ROOT / "web_ui" / "static" / "local_launch.html"))
+
+
+@app.get("/sim/drone/{drone_id}")
+async def drone_detail_page(drone_id: str):
+    """Detail view for a specific airframe in the fleet."""
+    return FileResponse(str(APP_ROOT / "web_ui" / "static" / "drone_detail.html"))
+
+
 @app.get("/api/base")
 async def api_base():
     cfg = read_cfg()
     return cfg.get("base", {"lat": 43.07470, "lon": -89.38420})
+
+
+# Дефолт на случай, если yaml потерян или невалиден — UI должен загружаться всегда.
+_MISSION_CTX_DEFAULT: Dict[str, Any] = {
+    "operation": {
+        "name": "SKYBITE OPS",
+        "number": "01",
+        "sector": "K-7",
+        "rel": "NATO",
+        "classification": "UNCLASSIFIED // FOR OFFICIAL USE ONLY",
+        "datalink_primary": "AES-256",
+        "datalink_backup": "SAT-2 STBY",
+    },
+    "operator": {
+        "name": "M. VOLK",
+        "clearance": "CL-3",
+        "session_id": "0x7F2A",
+    },
+    "certifications": ["FIPS 140-3", "DO-178C", "STANAG 4586", "STANAG 4609"],
+    "keep_out_zones": [],
+    "threats": [],
+    "ui_defaults": {"aor_radius_m": 2000, "aor_inner_rings": [1000, 500]},
+}
+
+
+@app.get("/api/mission_context")
+async def api_mission_context():
+    """Витрина UI: имя операции, оператор, classification, KOZ/threats, серт-список.
+    Читается из config/mission_context.yaml. Если файл отсутствует или битый — отдаётся дефолт,
+    чтобы UI не падал и страница всегда грузилась."""
+    if not MISSION_CTX.exists():
+        return _MISSION_CTX_DEFAULT
+    try:
+        with open(MISSION_CTX, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        # Сливаем с дефолтами на верхнем уровне ключей — на случай неполного yaml
+        merged: Dict[str, Any] = {**_MISSION_CTX_DEFAULT, **data}
+        # Глубокое слияние для словарных секций
+        for k in ("operation", "operator", "ui_defaults"):
+            if isinstance(merged.get(k), dict):
+                merged[k] = {**_MISSION_CTX_DEFAULT[k], **(data.get(k) or {})}
+        return merged
+    except Exception as e:
+        print(f"[UI] ⚠️ mission_context.yaml read failed: {e} — fallback to default")
+        return _MISSION_CTX_DEFAULT
 
 
 @app.get("/api/drones")
@@ -239,34 +340,60 @@ async def api_settings():
 
 @app.post("/api/orders")
 async def api_orders(body: Dict[str, Any]):
-    """Создаёт заказ, публикует его в MQTT → orchestrator"""
+    """Создаёт заказ, публикует его в MQTT → orchestrator.
+
+    Дополнительные поля (drone_id, priority, mission_type, cruise_alt_m,
+    cruise_speed_mps, takeoff_alt_m, auto_rth, notes, и расширенные
+    waypoints/loop_count/orbit_radius_m/pattern/sector_*) пробрасываются
+    в payload MQTT под ключом `extras` — orchestrator может их учитывать
+    либо игнорировать."""
     cfg = read_cfg()
     base_cfg = cfg.get("base", {"lat": 43.07470, "lon": -89.38420})
     base = LLA(lat=float(base_cfg["lat"]), lon=float(base_cfg["lon"]), alt=60.0)
 
-    addr1 = body.get("from") or {
-        "lat": body.get("pickup_lat"),
-        "lon": body.get("pickup_lon"),
-        "alt": 60.0,
-    }
-    addr2 = body.get("to") or {
-        "lat": body.get("drop_lat"),
-        "lon": body.get("drop_lon"),
-        "alt": 60.0,
-    }
+    cruise_alt = float(body.get("cruise_alt_m") or 60.0)
+    addr1 = body.get("from") or {"lat": body.get("pickup_lat"), "lon": body.get("pickup_lon"), "alt": cruise_alt}
+    addr2 = body.get("to") or {"lat": body.get("drop_lat"), "lon": body.get("drop_lon"), "alt": cruise_alt}
+    # Гарантируем alt в адресах (фронт может не прислать)
+    addr1.setdefault("alt", cruise_alt)
+    addr2.setdefault("alt", cruise_alt)
     payload_kg = float(body.get("weight", 2.0))
 
-    if not addr1["lat"] or not addr2["lat"]:
+    if not addr1.get("lat") or not addr2.get("lat"):
         return {"error": "Missing coordinates"}
+
+    priority = str(body.get("priority") or "normal").lower()
+    if priority not in ("low", "normal", "high", "urgent"):
+        priority = "normal"
 
     order = Order(
         base=base,
-        addr1=LLA(**addr1),
-        addr2=LLA(**addr2),
+        addr1=LLA(**{k: addr1[k] for k in ("lat", "lon", "alt")}),
+        addr2=LLA(**{k: addr2[k] for k in ("lat", "lon", "alt")}),
         payload_kg=payload_kg,
-        priority="normal",
+        priority=priority,
     )
-    bus.publish("orders/new", order.dict())
+    payload = order.dict()
+    # extras — для orchestrator'а; backend пока их не использует.
+    # waypoints/loop_count/orbit_radius_m/pattern/sector_* — расширенные поля
+    # для мультимиссионных типов (ISR / Patrol / Sector). Если их нет — fallback
+    # на классическую генерацию base→A→B→base в planner.
+    extras: Dict[str, Any] = {
+        "drone_id": body.get("drone_id"),
+        "mission_type": body.get("mission_type") or "delivery",
+        "cruise_alt_m": cruise_alt,
+        "cruise_speed_mps": float(body.get("cruise_speed_mps") or 10.0),
+        "takeoff_alt_m": float(body.get("takeoff_alt_m") or 15.0),
+        "takeoff_profile": str(body.get("takeoff_profile") or "vertical").lower(),
+        "auto_rth": bool(body.get("auto_rth", True)),
+        "notes": (body.get("notes") or "").strip() or None,
+    }
+    for k in ("waypoints", "loop_count", "orbit_radius_m", "pattern",
+              "sector_polygon", "sector_index", "sector_total"):
+        if body.get(k) is not None:
+            extras[k] = body.get(k)
+    payload["extras"] = extras
+    bus.publish("orders/new", payload)
     return {"status": "ok", "order_id": order.id}
 
 
@@ -315,3 +442,22 @@ async def api_active_missions():
     # сортируем: невыполненные сверху, COMPLETED в конце
     ms.sort(key=lambda m: (m.get("status") == "COMPLETED", -m.get("updated", 0)))
     return {"missions": ms}
+
+
+@app.get("/api/session/snapshot")
+async def api_session_snapshot():
+    """Снапшот сессии для восстановления карты после перезагрузки страницы:
+    активные миссии (с waypoints/типом/профилем взлёта) + траектории дронов.
+    Дроны восстанавливаются отдельно через /api/fleet."""
+    missions = []
+    for m in app.state.active_missions.values():
+        if not m.get("waypoints"):
+            continue
+        missions.append({
+            "mission_id": m.get("mission_id"),
+            "mission_type": m.get("mission_type", "delivery"),
+            "takeoff_profile": m.get("takeoff_profile", "vertical"),
+            "status": m.get("status"),
+            "waypoints": m.get("waypoints", []),
+        })
+    return {"missions": missions, "trails": app.state.drone_trails}

@@ -22,17 +22,17 @@
       stopBtn.classList.remove("hidden");
     } else if (state === "starting" || state === "stopping") {
       startBtn.disabled = true;
-      startBtn.textContent = state === "starting" ? "запуск..." : "остановка...";
+      startBtn.textContent = state === "starting" ? "Starting…" : "Stopping…";
       openBtn.classList.add("hidden");
       stopBtn.classList.add("hidden");
     } else {
       startBtn.classList.remove("hidden");
       startBtn.disabled = false;
-      startBtn.textContent = "▶️ Запустить";
+      startBtn.textContent = "▶ Start";
       openBtn.classList.add("hidden");
       stopBtn.classList.add("hidden");
     }
-    if (state === "error") setMsg(errorText || "ошибка sim", "err");
+    if (state === "error") setMsg(errorText || "Simulation error", "err");
   }
 
   async function refreshStatus() {
@@ -41,7 +41,7 @@
       const j = await r.json();
       setSimStatus(j.state, j.error);
     } catch (e) {
-      setMsg("не могу получить статус: " + e.message, "err");
+      setMsg("Cannot fetch status: " + e.message, "err");
     }
   }
 
@@ -63,8 +63,8 @@
     numMinus.disabled = n <= 1;
     numPlus.disabled = n >= 10;
     const ramMb = n * 250;
-    const bootEst = Math.ceil(15 + n * 4);  // грубая оценка boot-time
-    numHint.textContent = `~${ramMb}MB · boot ~${bootEst}с`;
+    const bootEst = Math.ceil(15 + n * 4);
+    numHint.textContent = `~${ramMb} MB · boot ~${bootEst} s`;
   }
   numMinus.addEventListener("click", () => { numInput.value = clampN() - 1; refreshNumUi(); });
   numPlus.addEventListener("click",  () => { numInput.value = clampN() + 1; refreshNumUi(); });
@@ -73,7 +73,7 @@
 
   $("btn-sim-start").addEventListener("click", async () => {
     const n = clampN();
-    setMsg(`Поднимаю ${n} PX4-инстанс${n === 1 ? "" : n < 5 ? "а" : "ов"} и компоненты — займёт ~${15 + n * 4}с (parallel boot + ready-check)`, "warn");
+    setMsg(`Booting ${n} PX4 instance${n === 1 ? "" : "s"} — about ${15 + n * 4} s (parallel boot + ready-check)…`, "warn");
     setSimStatus("starting");
     try {
       const r = await fetch("/api/launcher/sim/start", {
@@ -83,15 +83,15 @@
       });
       const j = await r.json();
       if (j.ok) {
-        setMsg(`Симуляция запущена (${j.num_drones || n} дронов). Открываю UI...`, "ok");
+        setMsg(`Simulation started · ${j.num_drones || n} airframes · opening UI…`, "ok");
         setSimStatus("running");
         setTimeout(() => { window.location.href = "/sim"; }, 800);
       } else {
-        setMsg("Ошибка запуска: " + (j.error || "unknown"), "err");
+        setMsg("Start failed: " + (j.error || "unknown"), "err");
         setSimStatus(j.state || "error", j.error);
       }
     } catch (e) {
-      setMsg("Сеть/сервер: " + e.message, "err");
+      setMsg("Network/server: " + e.message, "err");
       setSimStatus("error", e.message);
     }
   });
@@ -101,19 +101,19 @@
   });
 
   $("btn-sim-stop").addEventListener("click", async () => {
-    setMsg("Останавливаю sim...", "warn");
+    setMsg("Stopping simulation…", "warn");
     setSimStatus("stopping");
     try {
       const r = await fetch("/api/launcher/sim/stop", { method: "POST" });
       const j = await r.json();
       if (j.ok) {
-        setMsg("Симуляция остановлена.", "ok");
+        setMsg("Simulation stopped.", "ok");
         setSimStatus("stopped");
       } else {
-        setMsg("Ошибка остановки", "err");
+        setMsg("Stop failed.", "err");
       }
     } catch (e) {
-      setMsg("Сеть/сервер: " + e.message, "err");
+      setMsg("Network/server: " + e.message, "err");
     }
   });
 
@@ -121,18 +121,83 @@
     window.location.href = "/real";
   });
 
-  // Часы в шапке.
+  // Local launch (если профилей нет — открываем setup, бэкенд решит).
+  const localBtn = $("btn-local-launch");
+  if (localBtn) localBtn.addEventListener("click", () => {
+    window.location.href = "/local_launch";
+  });
+
+  // Card fleet — locked, но клик ведёт в roadmap-сообщение.
+  const fleetCard = $("card-fleet");
+  if (fleetCard) fleetCard.addEventListener("click", () => {
+    setMsg("Fleet operations · in development · target 0.6.0", "warn");
+  });
+
+  // ─── Часы и uptime в шапке ──────────────────────────────────────
+  const pageOpenedAt = Date.now();
+  function pad(n) { return String(n).padStart(2, "0"); }
   function tickClock() {
     const d = new Date();
-    const hh = String(d.getUTCHours()).padStart(2, "0");
-    const mm = String(d.getUTCMinutes()).padStart(2, "0");
-    const ss = String(d.getUTCSeconds()).padStart(2, "0");
-    const el = document.getElementById("clock-time");
-    if (el) el.textContent = `${hh}:${mm}:${ss}`;
+    const el = $("clock-time");
+    if (el) el.textContent = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+    const up = $("hero-uptime");
+    if (up) {
+      const s = Math.floor((Date.now() - pageOpenedAt) / 1000);
+      up.textContent = `${pad(Math.floor(s/60))}:${pad(s%60)}`;
+    }
   }
   setInterval(tickClock, 1000); tickClock();
 
-  // Пуллинг статуса каждые 3с пока кто-то на странице.
+  // ─── Профили реальных дронов в стат-ячейках + карточке Real ────
+  async function refreshProfiles() {
+    try {
+      const r = await fetch("/api/real/profiles");
+      const j = await r.json();
+      const list = j.profiles || [];
+      const tsP = $("ts-profiles");
+      const cnt = $("real-profile-count");
+      const last = $("real-last-used");
+      const lastConn = $("real-last-conn");
+      if (tsP) tsP.innerHTML = `${list.length} <small>· ${list.length ? '1 active' : 'none yet'}</small>`;
+      if (cnt) cnt.textContent = String(list.length);
+      if (list.length > 0 && last) {
+        const p = list[0];
+        last.textContent = p.name || p.display_name || "—";
+        if (lastConn) {
+          if (p.connection_type === "serial") {
+            lastConn.textContent = `${p.serial_port || "?"} · ${p.serial_baud || "?"}`;
+          } else {
+            lastConn.textContent = `${p.connection_type || "?"} · ${p.net_host || ""}:${p.net_port || "?"}`;
+          }
+        }
+      } else if (last) {
+        last.textContent = "—";
+        if (lastConn) lastConn.textContent = "no profile yet";
+      }
+    } catch (e) { /* silent */ }
+  }
+  refreshProfiles();
+
+  // ─── Recent activity (статика + локальный лог) ──────────────────
+  function logActivity(msg, tag) {
+    const list = $("activity-list");
+    if (!list) return;
+    const ts = (() => {
+      const d = new Date();
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    })();
+    const row = document.createElement("div");
+    row.className = "a-row";
+    const tagClass = tag && ["sim","real","fleet"].includes(tag.toLowerCase()) ? tag.toLowerCase() : "";
+    row.innerHTML = `<span class="a-ts mono">${ts}</span><span class="a-msg">${msg}</span><span class="a-tag ${tagClass}">${(tag || "UI").toUpperCase()}</span>`;
+    list.insertBefore(row, list.firstChild);
+    while (list.children.length > 8) list.removeChild(list.lastChild);
+  }
+  // первая запись + статус сим заменит при изменении (см. setSimStatus)
+  logActivity("Launch page opened.", "UI");
+
+  // ─── Пуллинг статуса каждые 3 с ────────────────────────────────
   refreshStatus();
   setInterval(refreshStatus, 3000);
+  setInterval(refreshProfiles, 8000);
 })();

@@ -47,8 +47,12 @@ class MissionStatus(str, Enum):
 
 class Waypoint(BaseModel):
     pos: LLA
-    kind: Literal["TAKEOFF", "NAV", "LAND", "RTL"] = "NAV"
-    hold_s: float = 0.0
+    kind: Literal["TAKEOFF", "NAV", "LAND", "RTL", "ORBIT"] = "NAV"
+    hold_s: float = 0.0          # для NAV — время зависания (hover) на точке;
+                                 # для ORBIT — длительность кружения над точкой
+    speed_m_s: float = 5.0       # cruise speed для этого waypoint'а
+    acceptance_radius_m: float = 5.0  # «достигнут ли» порог для NAV-item
+    orbit_radius_m: float = 0.0  # радиус орбиты для kind=ORBIT (ISR)
 
 
 class Mission(BaseModel):
@@ -64,11 +68,14 @@ class Mission(BaseModel):
 
     # полезная нагрузка/приоритет
     payload_kg: float = 2.0
-    priority: Literal["low", "normal", "high"] = "normal"
+    priority: Literal["low", "normal", "high", "urgent"] = "normal"
 
     # исполнение
     vehicle_id: Optional[str] = None
     status: MissionStatus = MissionStatus.CREATED
+    mission_type: str = "delivery"  # delivery | isr | patrol | sector — для UI/раскраски
+    notes: Optional[str] = None     # операторские пометки из формы new mission (для UI)
+    takeoff_profile: str = "vertical"  # vertical | inclined — для отрисовки lead-in на карте
     waypoints: List[Waypoint] = Field(default_factory=list)
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -88,7 +95,7 @@ class Order(BaseModel):
     addr1: LLA
     addr2: LLA
     payload_kg: float = 2.0
-    priority: Literal["low", "normal", "high"] = "normal"
+    priority: Literal["low", "normal", "high", "urgent"] = "normal"
 
     model_config = ConfigDict(
         ser_json_timedelta="iso8601",

@@ -1,186 +1,212 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Drone Ops · Connect Real Drone</title>
+  <title>Skybite · Real Drone Setup</title>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/static/style.css?v=5" />
-  <link rel="stylesheet" href="/static/launcher.css?v=2" />
-  <link rel="stylesheet" href="/static/real_connect.css?v=2" />
+  <link rel="stylesheet" href="/static/launcher.css?v=3" />
+  <link rel="stylesheet" href="/static/real_connect.css?v=3" />
 </head>
 <body class="launcher-body">
 
-<div class="classification top">UNCLASSIFIED // FOR OFFICIAL USE ONLY · DRONE OPS DEMO</div>
-
+<!-- Top bar -->
 <header class="topbar">
-  <div class="brand">
-    <a href="/" style="display:flex;align-items:center;gap:12px;color:inherit;text-decoration:none">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-        <circle cx="12" cy="12" r="9"/>
-        <path d="M12 3v18M3 12h18"/>
-        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+  <a href="/" class="back-link">← Back to menu</a>
+  <div class="brand" style="padding-left:16px;border-left:1px solid var(--hairline)">
+    <div class="brand-glyph">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="3" fill="currentColor"/>
       </svg>
-      <div class="brand-text">
-        <div class="brand-title">SENTINEL UAS</div>
-        <div class="brand-sub">Real Connect · v3.4</div>
-      </div>
-    </a>
+    </div>
+    <div>
+      <div class="brand-name">Real drone setup</div>
+      <div class="brand-sub">connection wizard</div>
+    </div>
   </div>
   <div class="topbar-spacer"></div>
-  <a href="/" class="btn btn-ghost" style="text-decoration:none;display:inline-flex;align-items:center;padding:8px 16px;">← К лаунчеру</a>
+  <div class="step-strip">
+    <div class="step done" data-step="1"><span class="s-no">1</span><span>Channel</span></div>
+    <div class="step active" data-step="2"><span class="s-no">2</span><span>Parameters</span></div>
+    <div class="step" data-step="3"><span class="s-no">3</span><span>Test</span></div>
+    <div class="step" data-step="4"><span class="s-no">4</span><span>Save</span></div>
+  </div>
 </header>
 
-<div class="real-warn-banner mono">
-  ⚠ REAL DRONE MODE · команды и арминг будут управлять физическим бортом
-</div>
+<div class="real-warn-banner mono">⚠ Real drone mode · arming and commands will move physical hardware</div>
 
 <main class="real-main">
 
-  <!-- Левая панель: список профилей -->
+  <!-- ===== LEFT: saved profiles ===== -->
   <aside class="real-sidebar">
     <div class="panel-head">
-      <span>SAVED PROFILES</span>
+      <span>Saved profiles</span>
       <span class="panel-count mono" id="profile-count">0</span>
     </div>
+
+    <button class="btn btn-primary" id="btn-new-profile" style="width:100%;margin-bottom:12px">+ New profile</button>
+
     <div class="profile-list" id="profile-list">
-      <div class="profile-empty">пусто — создайте профиль справа</div>
+      <div class="profile-empty">— no profiles yet — create one on the right</div>
     </div>
-    <button class="btn btn-ghost" id="btn-new-profile" style="margin-top:12px">+ Новый профиль</button>
+
+    <div class="panel-head" style="margin-top:18px">
+      <span>Tips</span>
+    </div>
+    <div class="tips">
+      <p><b>Serial</b> is the most reliable for benchtop. Use 57600 with SiK radios, 921600 with direct USB-C.</p>
+      <p><b>UDP</b> works through MAVLink-router. Bind to <span class="mono">0.0.0.0:14550</span> to accept any source.</p>
+      <p><b>TCP</b> is best across LAN. Same port pattern.</p>
+    </div>
   </aside>
 
-  <!-- Правая панель: форма + test connection -->
+  <!-- ===== RIGHT: wizard ===== -->
   <section class="real-content">
 
-    <div class="content-card">
-      <div class="content-card-head">
-        <div>
-          <div class="card-tag" style="color:var(--orange)">CONNECTION SETUP</div>
-          <div class="content-card-title" id="form-title">Подключение нового борта</div>
-        </div>
-        <div class="content-card-actions">
-          <button class="btn btn-ghost hidden" id="btn-delete-profile">🗑 Удалить</button>
-        </div>
-      </div>
-
-      <form class="real-form" id="real-form" autocomplete="off">
-
-        <div class="form-row">
-          <label>Имя профиля
-            <span class="hint">только латиница, цифры, _ и -</span>
-          </label>
-          <input type="text" id="f-name" required maxlength="40" placeholder="x500_main" pattern="[a-zA-Z0-9_\-]{1,40}" />
-        </div>
-
-        <div class="form-row">
-          <label>Отображаемое имя</label>
-          <input type="text" id="f-display" placeholder="X500 (основной)" />
-        </div>
-
-        <div class="form-row">
-          <label>Тип канала</label>
-          <div class="seg">
-            <button type="button" class="seg-btn active" data-conn="serial">Serial</button>
-            <button type="button" class="seg-btn" data-conn="udp">UDP</button>
-            <button type="button" class="seg-btn" data-conn="tcp">TCP</button>
-          </div>
-        </div>
-
-        <!-- SERIAL -->
-        <div class="form-block" id="block-serial">
-          <div class="form-row">
-            <label>Serial port
-              <button type="button" class="link-btn" id="btn-reload-ports">↻ обновить</button>
-            </label>
-            <select id="f-serial-port">
-              <option value="">— нет доступных портов —</option>
-            </select>
-            <span class="hint" id="port-hint"></span>
-          </div>
-          <div class="form-row">
-            <label>Baud rate</label>
-            <div class="seg" id="baud-seg">
-              <button type="button" class="seg-btn active" data-baud="57600">57600 (SiK)</button>
-              <button type="button" class="seg-btn" data-baud="115200">115200</button>
-              <button type="button" class="seg-btn" data-baud="921600">921600 (USB-C)</button>
-              <button type="button" class="seg-btn" data-baud="custom">custom</button>
-            </div>
-            <input type="number" id="f-baud-custom" class="hidden" placeholder="custom baud" />
-          </div>
-        </div>
-
-        <!-- UDP/TCP -->
-        <div class="form-block hidden" id="block-net">
-          <div class="form-row two-col">
-            <div>
-              <label>Host</label>
-              <input type="text" id="f-net-host" placeholder="0.0.0.0 или IP" />
-            </div>
-            <div>
-              <label>Port</label>
-              <input type="number" id="f-net-port" placeholder="14550" />
-            </div>
-          </div>
-        </div>
-
-        <div class="form-divider">Описание борта</div>
-
-        <div class="form-row two-col">
-          <div>
-            <label>Frame</label>
-            <input type="text" id="f-frame" value="X500" />
-          </div>
-          <div>
-            <label>Battery cells (S)</label>
-            <input type="number" id="f-cells" value="4" min="2" max="14" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <label>Min voltage (alert порог, V)</label>
-          <input type="number" step="0.1" id="f-vmin" value="14.0" />
-        </div>
-
-        <div class="form-row">
-          <label>Notes</label>
-          <textarea id="f-notes" rows="2" placeholder="любые заметки про этот борт"></textarea>
-        </div>
-
-      </form>
-
-      <div class="form-actions">
-        <button class="btn btn-primary" id="btn-test-conn">🔌 Test Connection</button>
-        <button class="btn" id="btn-save" disabled title="доступно после успешного теста">💾 Сохранить профиль</button>
+    <div class="w-head">
+      <div class="w-eyebrow">Step 2 of 4 · Parameters</div>
+      <div class="content-card-title" id="form-title">New connection</div>
+      <div class="w-sub">Verify hardware link parameters, then move to step 3 to validate heartbeat and sensor health.</div>
+      <div class="content-card-actions" style="margin-top:8px">
+        <button class="btn btn-ghost hidden" id="btn-delete-profile">🗑 Delete profile</button>
       </div>
     </div>
 
-    <!-- Результаты теста -->
-    <div class="content-card hidden" id="test-results-card">
-      <div class="content-card-head">
-        <div>
-          <div class="card-tag">PRE-FLIGHT CHECK</div>
-          <div class="content-card-title">Результаты проверки</div>
+    <form id="real-form" autocomplete="off">
+
+      <!-- §A Channel -->
+      <div class="panel accent-amber">
+        <div class="p-head"><span class="p-t">§A · Channel</span><span class="p-sub">type &amp; port</span></div>
+        <div class="p-body">
+
+          <div class="field">
+            <label class="field-l">Channel type</label>
+            <div class="seg">
+              <button type="button" class="seg-btn active" data-conn="serial">Serial</button>
+              <button type="button" class="seg-btn" data-conn="udp">UDP</button>
+              <button type="button" class="seg-btn" data-conn="tcp">TCP</button>
+            </div>
+          </div>
+
+          <!-- Serial block -->
+          <div id="block-serial">
+            <div class="field">
+              <label class="field-l">
+                Serial port
+                <button type="button" class="link-btn" id="btn-reload-ports">↻ refresh</button>
+              </label>
+              <select id="f-serial-port">
+                <option value="">— no ports detected —</option>
+              </select>
+              <span class="hint" id="port-hint"></span>
+            </div>
+
+            <div class="field">
+              <label class="field-l">Baud rate</label>
+              <div class="seg" id="baud-seg">
+                <button type="button" class="seg-btn active" data-baud="57600">57600 (SiK)</button>
+                <button type="button" class="seg-btn" data-baud="115200">115200</button>
+                <button type="button" class="seg-btn" data-baud="921600">921600 (USB-C)</button>
+                <button type="button" class="seg-btn" data-baud="custom">Custom</button>
+              </div>
+              <input type="number" id="f-baud-custom" class="hidden" placeholder="custom baud" />
+            </div>
+          </div>
+
+          <!-- UDP / TCP block -->
+          <div id="block-net" class="hidden">
+            <div class="two-col">
+              <div class="field" style="display:block">
+                <label class="field-l">Host</label>
+                <input type="text" id="f-net-host" placeholder="0.0.0.0 or IP" />
+              </div>
+              <div class="field" style="display:block">
+                <label class="field-l">Port</label>
+                <input type="number" id="f-net-port" placeholder="14550" />
+              </div>
+            </div>
+          </div>
+
         </div>
-        <div class="content-card-actions mono small" id="test-meta"></div>
       </div>
 
-      <div class="check-grid" id="check-grid">
-        <!-- заполняется JS -->
+      <!-- §B Airframe -->
+      <div class="panel accent-blue">
+        <div class="p-head"><span class="p-t">§B · Airframe</span><span class="p-sub">basic descriptors</span></div>
+        <div class="p-body">
+
+          <div class="field">
+            <label class="field-l">Profile name <span class="hint">letters · digits · _ -</span></label>
+            <input type="text" id="f-name" required maxlength="40" placeholder="x500_main" pattern="[a-zA-Z0-9_\-]{1,40}" />
+          </div>
+          <div class="field">
+            <label class="field-l">Display name</label>
+            <input type="text" id="f-display" placeholder="X500 · primary quad" />
+          </div>
+
+          <div class="two-col">
+            <div class="field" style="display:block">
+              <label class="field-l">Frame</label>
+              <input type="text" id="f-frame" value="X500" />
+            </div>
+            <div class="field" style="display:block">
+              <label class="field-l">Battery cells (S)</label>
+              <input type="number" id="f-cells" value="4" min="2" max="14" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-l">Min voltage <span class="hint">cell-low alert · V</span></label>
+            <input type="number" step="0.1" id="f-vmin" value="14.0" />
+          </div>
+
+          <div class="field stack">
+            <label class="field-l">Notes</label>
+            <textarea id="f-notes" rows="2" placeholder="any notes about this airframe"></textarea>
+          </div>
+
+        </div>
       </div>
 
-      <pre class="raw-result mono" id="raw-result"></pre>
+      <!-- §C Test connection — results -->
+      <div class="panel accent-green hidden" id="test-results-card">
+        <div class="p-head">
+          <span class="p-t">§C · Test connection · last run</span>
+          <span class="p-sub mono" id="test-meta">waiting…</span>
+        </div>
+        <div style="padding:0">
+          <div class="check-grid" id="check-grid">
+            <!-- Filled by real_connect.js -->
+          </div>
+          <div style="padding:0 16px 16px">
+            <pre class="raw mono" id="raw-result"></pre>
+          </div>
+        </div>
+      </div>
+
+    </form>
+
+    <!-- Actions -->
+    <div class="actions">
+      <div style="display:flex;gap:10px">
+        <a href="/" class="btn btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">← Back</a>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="mono small" id="ready-state">awaiting test</span>
+        <button class="btn" id="btn-test-conn">🔌 Test connection</button>
+        <button class="btn" id="btn-save" disabled title="run a successful test first">💾 Save profile</button>
+        <a href="/testing" class="btn btn-primary" id="btn-go-testing" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">Continue → Test flights</a>
+      </div>
     </div>
 
   </section>
 </main>
 
-<div class="classification bot">UNCLASSIFIED // FOR OFFICIAL USE ONLY · DRONE OPS DEMO</div>
-
-<script src="/static/real_connect.js?v=1"></script>
+<script src="/static/real_connect.js?v=2"></script>
 </body>
 </html>

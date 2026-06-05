@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SENTINEL UAS · Mission Control</title>
+  <title>Skybite · Flight Control</title>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
@@ -17,79 +17,238 @@
   </script>
   <link href="https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Cesium.js"></script>
+  <script src="/static/vendor-mgrs.min.js"></script>
 
-  <link rel="stylesheet" href="/static/style.css?v=5" />
+  <link rel="stylesheet" href="/static/style.css?v=27" />
 </head>
 <body>
 
-<div class="classification top">UNCLASSIFIED // FOR OFFICIAL USE ONLY · DRONE OPS DEMO</div>
-
-<header class="topbar">
-  <div class="brand">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-      <circle cx="12" cy="12" r="9"/>
-      <path d="M12 3v18M3 12h18"/>
-      <circle cx="12" cy="12" r="3" fill="currentColor"/>
-    </svg>
-    <div class="brand-text">
-      <div class="brand-title">SENTINEL UAS</div>
-      <div class="brand-sub">Mission Control · v3.4</div>
+<header class="doc-head">
+  <!-- LEFT: brand + DOC NO/REV -->
+  <div class="dh-brand">
+    <div class="dh-brand-row">
+      <div class="dh-glyph">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 3v18M3 12h18"/>
+          <circle cx="12" cy="12" r="3" fill="currentColor"/>
+        </svg>
+      </div>
+      <div>
+        <div class="dh-brand-name">SKYBITE</div>
+        <div class="dh-brand-sub">Flight Control · v3.4</div>
+      </div>
+    </div>
+    <div class="dh-doc-no">
+      <div class="dh-dn"><span class="dh-dn-l">MODE</span><span class="dh-dn-v mono" id="dh-mode">—</span></div>
+      <div class="dh-dn"><span class="dh-dn-l">UPTIME</span><span class="dh-dn-v mono" id="dh-uptime">T+00:00</span></div>
     </div>
   </div>
 
-  <div class="mode-toggle">
-    <button class="mode-btn active" data-mode="ops">OPS</button>
-    <button class="mode-btn" data-mode="sandbox">SANDBOX</button>
+  <!-- CENTER: mission strip (5 cells) -->
+  <div class="dh-mission">
+    <div class="dh-cell">
+      <div class="dh-l">Active</div>
+      <div class="dh-v mono" id="dh-active"><span id="kpi-active-missions">0</span><small> missions</small></div>
+    </div>
+    <div class="dh-cell">
+      <div class="dh-l">Objects</div>
+      <div class="dh-v mono blue"><span id="kpi-objects">0</span><small> drawn</small></div>
+    </div>
+    <div class="dh-cell">
+      <div class="dh-l">Fleet</div>
+      <div class="dh-v mono">
+        <span id="kpi-active">0/0</span><small> · <span id="kpi-flight">0</span> airborne</small>
+      </div>
+    </div>
+    <div class="dh-cell">
+      <div class="dh-l">Missions</div>
+      <div class="dh-v mono" id="kpi-missions-wrap">
+        <span id="kpi-missions">0</span><small> done</small>
+      </div>
+    </div>
+    <div class="dh-cell" id="kpi-link-box">
+      <div class="dh-l">Link</div>
+      <div class="dh-v mono"><span id="kpi-link">—</span></div>
+    </div>
   </div>
 
-  <div class="topbar-spacer"></div>
-
-  <div class="kpi-bar">
-    <div class="kpi"><div class="kpi-label">FLEET</div><div class="kpi-value" id="kpi-active">0/0</div></div>
-    <div class="kpi"><div class="kpi-label">AIRBORNE</div><div class="kpi-value" id="kpi-flight">0</div></div>
-    <div class="kpi"><div class="kpi-label">MISSIONS</div><div class="kpi-value" id="kpi-missions">0</div></div>
-    <div class="kpi" id="kpi-link-box"><div class="kpi-label">DATALINK</div><div class="kpi-value" id="kpi-link">—</div></div>
+  <!-- RIGHT: DTG / UTC -->
+  <div class="dh-rev">
+    <div class="dh-rr"><span class="dh-rr-l">DTG</span><span class="dh-rr-v mono" id="dh-dtg">———Z ———</span></div>
+    <div class="dh-rr"><span class="dh-rr-l">UTC</span><span class="dh-rr-v mono" id="clock-time">--:--:--</span></div>
   </div>
 
-  <div class="clock">
-    <div id="clock-time" class="mono">--:--:--</div>
-    <div class="clock-tz">UTC · ZULU</div>
+</header>
+
+<!-- ===== Action strip — group labels with dropdown popovers ===== -->
+<div class="dh-actions">
+
+  <!-- CFG (solo button — opens drawer with drawings list + Export/Reset) -->
+  <button id="btn-settings" class="dh-group-btn dh-group-solo" title="Drawn objects & data">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span>CFG</span>
+  </button>
+
+  <!-- DRAW group -->
+  <div class="dh-group" data-group="draw">
+    <button class="dh-group-btn" data-toggle-group="draw" id="dh-draw-label">DRAW <span class="dh-chev">▾</span></button>
+    <div class="dh-group-popover">
+      <button class="dh-toggle" data-draw-tool="koz" title="No-fly zone (polygon)">KOZ</button>
+      <button class="dh-toggle" data-draw-tool="threat" title="Threat zone (click center, click edge)">THREAT</button>
+      <button class="dh-toggle" data-draw-tool="poi" title="Point of interest (single click)">POI</button>
+      <button class="dh-toggle" data-draw-tool="route" title="Route / corridor (polyline)">ROUTE</button>
+      <button class="dh-toggle" data-draw-tool="measure" title="Measure distance">MEASURE</button>
+    </div>
   </div>
 
-  <button id="btn-exit-launcher" class="exit-btn"
-          title="Остановить симуляцию (PX4 + bridges + workers) и вернуться к лаунчеру">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+  <!-- HUD group -->
+  <div class="dh-group" data-group="hud">
+    <button class="dh-group-btn" data-toggle-group="hud">HUD <span class="dh-chev">▾</span></button>
+    <div class="dh-group-popover">
+      <button class="dh-toggle" data-vis="show_cursor_mgrs" title="Cursor MGRS readout">MGRS</button>
+      <button class="dh-toggle" data-vis="show_compass" title="Compass HUD (HDG)">CMP</button>
+      <button class="dh-toggle" data-vis="show_legend" title="Map legend">LGD</button>
+      <button class="dh-toggle" data-vis="show_grid" title="Map grid overlay">GRID</button>
+      <button class="dh-toggle" data-vis="show_narrow_scale" title="N-arrow + scale bar">N+SC</button>
+      <button class="dh-toggle" data-vis="show_doc_frame" title="Doc-frame (FIG. 4.1)">FRAME</button>
+      <button class="dh-toggle" data-vis="show_drone_trails" title="Drone trails">TRAIL</button>
+      <button class="dh-toggle" data-vis="show_drone_shadows" title="Drone shadows on ground">SHDW</button>
+      <button class="dh-toggle" data-vis="show_sandbox" title="Sandbox tools">SBX</button>
+    </div>
+  </div>
+
+  <!-- PANELS group -->
+  <div class="dh-group" data-group="panels">
+    <button class="dh-group-btn" data-toggle-group="panels">PANELS <span class="dh-chev">▾</span></button>
+    <div class="dh-group-popover">
+      <button class="dh-toggle" data-vis="show_taskings" title="Active Missions panel (table + timeline)">ACTIVE</button>
+      <button class="dh-toggle" data-vis="show_event_log" title="Event Log">LOG</button>
+      <button class="dh-toggle" data-vis="show_doc_foot" title="Doc footer (BLACK BOX + CERT)">FOOT</button>
+      <button class="dh-toggle" data-vis="show_schematic" title="Fig. 2 · Airframe Schematic">SCHM</button>
+    </div>
+  </div>
+
+  <!-- POP-OUT group -->
+  <div class="dh-group" data-group="popout">
+    <button class="dh-group-btn" data-toggle-group="popout">POP-OUT <span class="dh-chev">▾</span></button>
+    <div class="dh-group-popover">
+      <button class="dh-toggle dh-action" data-popout="event-log" title="Open Event Log in new window">↗ LOG</button>
+      <button class="dh-toggle dh-action" data-popout="taskings" title="Open Taskings+Gantt in new window">↗ TAB</button>
+      <button class="dh-toggle dh-action" data-popout="schematic" title="Open Schematic in new window">↗ SCH</button>
+    </div>
+  </div>
+
+  <!-- MAP group -->
+  <div class="dh-group" data-group="map">
+    <button class="dh-group-btn" data-toggle-group="map">MAP <span class="dh-chev">▾</span></button>
+    <div class="dh-group-popover dh-popover-wide">
+      <span class="dh-popover-l">Paper filter</span>
+      <input type="range" min="0" max="100" step="1" data-vis-slider="map_filter" class="dh-slider" />
+      <span class="dh-slider-val mono" id="dh-filter-val">—</span>
+      <button class="dh-toggle dh-action" id="dh-zoom-fleet" title="Zoom to fit fleet">⛶ FIT</button>
+    </div>
+  </div>
+
+  <!-- MODE group -->
+  <div class="dh-group" data-group="mode">
+    <button class="dh-group-btn" data-toggle-group="mode">MODE <span class="dh-chev">▾</span></button>
+    <div class="dh-group-popover">
+      <button class="dh-toggle" data-vis="compact_mode" title="Compact mode (denser layout)">COMPACT</button>
+    </div>
+  </div>
+
+  <!-- MISSIONS (solo button — opens session missions log) -->
+  <button id="btn-missions" class="dh-group-btn dh-group-solo" title="All missions in this session">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+    </svg>
+    <span>MISSIONS</span>
+  </button>
+
+  <div class="dh-actions-spacer"></div>
+
+  <!-- Back to lobby — НЕ останавливает симуляцию, просто возвращает в лобби -->
+  <button id="btn-back-lobby" class="dh-group-btn dh-group-solo"
+          title="Return to lobby — simulation keeps running in the background">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>
+    </svg>
+    <span>BACK TO LOBBY</span>
+  </button>
+
+  <!-- Finish (filled red) — останавливает симуляцию и возвращает в лобби -->
+  <button id="btn-exit-launcher" class="exit-btn dh-exit"
+          title="Stop simulation (PX4 + bridges + workers) and return to lobby">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
       <path d="M9 18l-6-6 6-6"/><path d="M3 12h13"/><path d="M21 19V5"/>
     </svg>
-    <span>EXIT</span>
+    <span>FINISH</span>
   </button>
-</header>
+</div>
 
 <div id="exit-overlay" class="exit-overlay hidden">
   <div class="exit-card">
     <div class="exit-spinner"></div>
-    <div class="exit-text">Останавливаем симуляцию…</div>
+    <div class="exit-text">Stopping simulation…</div>
     <div class="exit-sub mono" id="exit-sub">PX4 SITL · MAVSDK bridges · workers</div>
+  </div>
+</div>
+
+<!-- ===== MISSIONS LOG (session) ===== -->
+<div id="missions-modal-bg" class="modal-bg hidden">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <span>Session Missions · <span id="missions-log-count" class="mono">0</span></span>
+      <button class="icon-btn" id="missions-close">×</button>
+    </div>
+    <div class="modal-body">
+      <table class="ms-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>Type</th><th>UAS</th><th>Status</th><th>Progress</th><th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="missions-log-tbody">
+          <tr class="ms-empty"><td colspan="6">— no missions this session —</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Mission detail popup (on top of the log) -->
+<div id="mission-detail-bg" class="modal-bg hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <span>Mission <span id="md-id" class="mono">—</span></span>
+      <button class="icon-btn" id="mission-detail-close">×</button>
+    </div>
+    <div class="modal-body" id="mission-detail-body"></div>
   </div>
 </div>
 
 <script>
 (() => {
+  // Back to lobby — НЕ трогает симуляцию, просто уводит в лобби.
+  const backBtn = document.getElementById("btn-back-lobby");
+  if (backBtn) backBtn.addEventListener("click", () => { window.location.href = "/"; });
+
   const btn = document.getElementById("btn-exit-launcher");
   const overlay = document.getElementById("exit-overlay");
   const sub = document.getElementById("exit-sub");
   if (!btn) return;
 
   btn.addEventListener("click", async () => {
-    if (!confirm("Остановить симуляцию и вернуться к лаунчеру?\n\nВсе PX4-инстансы, MAVSDK bridges и workers будут завершены.")) return;
+    if (!confirm("Finish simulation and return to lobby?\n\nAll PX4 instances, MAVSDK bridges and workers will be terminated.")) return;
     btn.disabled = true;
     overlay.classList.remove("hidden");
     try {
       const r = await fetch("/api/launcher/sim/stop", { method: "POST" });
       const j = await r.json().catch(() => ({}));
-      sub.textContent = j.ok ? "✓ остановлено · перехожу на /" : "⚠ ответ сервера: " + JSON.stringify(j);
+      sub.textContent = j.ok ? "✓ stopped · redirecting to menu" : "⚠ server: " + JSON.stringify(j);
     } catch (e) {
-      sub.textContent = "⚠ сеть/сервер: " + e.message + " — всё равно ухожу на /";
+      sub.textContent = "⚠ network/server: " + e.message + " — redirecting anyway";
     }
     setTimeout(() => { window.location.href = "/"; }, 600);
   });
@@ -99,23 +258,107 @@
 <main class="app">
   <aside class="left-strip">
     <div class="panel-head">
-      <span>UAS Roster · Tab. 1</span>
+      <span>Drones</span>
       <span class="panel-count mono" id="fleet-count">0</span>
     </div>
     <div class="scroll" id="drone-cards"></div>
+
+    <!-- Fig. 2 · Airframe schematic — отображает выбранный дрон -->
+    <div class="schematic">
+      <div class="schematic-head">
+        <span class="schematic-title">Fig. 2 · Airframe</span>
+        <span class="schematic-target mono" id="schem-target">— select UAS —</span>
+      </div>
+      <svg class="schem-svg" viewBox="0 0 320 130" preserveAspectRatio="xMidYMid meet">
+        <g stroke="currentColor" fill="none" stroke-width="1">
+          <!-- center body -->
+          <rect x="140" y="55" width="40" height="20" rx="2"/>
+          <circle cx="160" cy="65" r="3" fill="currentColor"/>
+          <!-- arms -->
+          <line x1="142" y1="60" x2="100" y2="35"/>
+          <line x1="178" y1="60" x2="220" y2="35"/>
+          <line x1="142" y1="70" x2="100" y2="95"/>
+          <line x1="178" y1="70" x2="220" y2="95"/>
+          <!-- rotors -->
+          <circle id="schem-m1-rotor" cx="100" cy="35" r="14" stroke-dasharray="2 2"/>
+          <circle id="schem-m2-rotor" cx="220" cy="35" r="14" stroke-dasharray="2 2"/>
+          <circle id="schem-m3-rotor" cx="100" cy="95" r="14" stroke-dasharray="2 2"/>
+          <circle id="schem-m4-rotor" cx="220" cy="95" r="14" stroke-dasharray="2 2"/>
+          <!-- landing gear -->
+          <line x1="148" y1="75" x2="148" y2="92"/>
+          <line x1="172" y1="75" x2="172" y2="92"/>
+          <line x1="142" y1="92" x2="178" y2="92"/>
+          <!-- payload box -->
+          <rect x="152" y="82" width="16" height="8" fill="var(--accent-soft)"/>
+        </g>
+        <!-- callouts -->
+        <g font-family="IBM Plex Mono, monospace" font-size="8" fill="var(--ink-2)">
+          <line x1="100" y1="35" x2="20" y2="20" stroke="var(--ink-4)" stroke-width="0.6"/>
+          <text x="20" y="16">M1 · <tspan id="schem-m1-rpm">— RPM</tspan></text>
+          <text x="20" y="26" id="schem-m1-status" fill="var(--accent)" font-weight="700">▲ —</text>
+
+          <line x1="220" y1="35" x2="300" y2="20" stroke="var(--ink-4)" stroke-width="0.6"/>
+          <text x="240" y="16">M2 · <tspan id="schem-m2-rpm">— RPM</tspan></text>
+          <text x="240" y="26" id="schem-m2-status" fill="var(--accent)" font-weight="700">▲ —</text>
+
+          <line x1="100" y1="95" x2="20" y2="118" stroke="var(--ink-4)" stroke-width="0.6"/>
+          <text x="20" y="116">M3 · <tspan id="schem-m3-rpm">— RPM</tspan></text>
+          <text x="20" y="126" id="schem-m3-status" fill="var(--accent)" font-weight="700">▲ —</text>
+
+          <line x1="220" y1="95" x2="300" y2="118" stroke="var(--ink-4)" stroke-width="0.6"/>
+          <text x="240" y="116">M4 · <tspan id="schem-m4-rpm">— RPM</tspan></text>
+          <text x="240" y="126" id="schem-m4-status" fill="var(--accent)" font-weight="700">▲ —</text>
+
+          <line x1="160" y1="86" x2="160" y2="50" stroke="var(--ink-4)" stroke-width="0.6"/>
+          <text x="160" y="48" text-anchor="middle">PAYLOAD · <tspan id="schem-payload">— kg</tspan></text>
+        </g>
+      </svg>
+    </div>
 
     <div class="sidebar-legend">
       <div class="legend-title">Legend · Fig. 4.1</div>
       <div class="legend-row"><span class="lg-dot" style="background:#1d4ed8"></span>BASE</div>
       <div class="legend-row"><span class="lg-dot" style="background:#1d4ed8"></span>FRIENDLY UAS</div>
       <div class="legend-row"><span class="lg-dot" style="background:#b45309"></span>TAKEOFF / LAND</div>
-      <div class="legend-row"><span class="lg-dot" style="background:#1d4ed8;background:white;border-color:#1d4ed8"></span>NAV WP</div>
       <div class="legend-row"><span class="lg-dot" style="background:#166534"></span>COMPLETED</div>
     </div>
   </aside>
 
   <section class="map-wrap">
     <div id="cesium"></div>
+
+    <!-- SVG overlay поверх Cesium-канваса для doc-look:
+         AOR rings, KOZ polygons, threats — привязаны к географии и пересчитываются при camera move.
+         Сетка/N-arrow/scale — координаты экранные.
+         Эл-ты "geo" пересчитываются в JS (geoOverlayUpdate). -->
+    <svg id="map-overlay" class="map-overlay" preserveAspectRatio="none">
+      <defs>
+        <pattern id="ovr-grid-fine" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(10,14,20,0.04)" stroke-width="0.6"/>
+        </pattern>
+        <pattern id="ovr-grid-coarse" width="200" height="200" patternUnits="userSpaceOnUse">
+          <path d="M 200 0 L 0 0 0 200" fill="none" stroke="rgba(10,14,20,0.10)" stroke-width="0.7"/>
+        </pattern>
+      </defs>
+      <!-- сетки рисуются в screen-space, размеры подгоняются JS под viewport -->
+      <rect id="ovr-grid-bg-fine" width="100%" height="100%" fill="url(#ovr-grid-fine)"/>
+      <rect id="ovr-grid-bg-coarse" width="100%" height="100%" fill="url(#ovr-grid-coarse)"/>
+
+      <!-- Слой пользовательских рисунков (Drawing Tools) — заполняется drawingsRender() -->
+      <g id="ovr-drawings"></g>
+      <!-- Превью рисуемого в текущий момент объекта (полигон/линия/круг до commit) -->
+      <g id="ovr-drawing-preview"></g>
+
+      <!-- N-arrow (фиксированная позиция, экранные координаты) -->
+      <g id="ovr-narrow" transform="translate(60,60)">
+        <line x1="0" y1="-22" x2="0" y2="22" stroke="#0a0e14" stroke-width="1.4"/>
+        <polygon points="0,-22 -5,-12 5,-12" fill="#0a0e14"/>
+        <text x="0" y="-28" text-anchor="middle" font-family="IBM Plex Sans" font-size="11" font-weight="700" fill="#0a0e14">N</text>
+      </g>
+
+      <!-- Scale bar (экранные координаты) — перерисовывается JS на основе текущего zoom -->
+      <g id="ovr-scale" transform="translate(60,0)"></g>
+    </svg>
 
     <div class="hud-right">
       <div class="compass">
@@ -125,6 +368,57 @@
       <button class="hud-btn" id="btn-perspective" title="Perspective 3D">∠</button>
       <button class="hud-btn" id="btn-top-down" title="Top-down">⊙</button>
       <button class="hud-btn" id="btn-home" title="Center on base">⌂</button>
+    </div>
+
+    <!-- Status / hint banner — показывается во время рисования (top of map) -->
+    <div class="draw-hint hidden" id="draw-hint"></div>
+
+    <!-- Mission pick hint (route / area / sector) -->
+    <div class="draw-hint hidden" id="mission-pick-hint"></div>
+
+    <!-- Property popup для нового объекта (KOZ/Threat/POI/Route) -->
+    <div class="draw-popup hidden" id="draw-popup">
+      <div class="dp-head"><span id="dp-title">Save object</span><button class="dp-close" id="dp-close">×</button></div>
+      <div class="dp-body">
+        <label class="dp-row"><span>Name</span><input type="text" id="dp-name" placeholder="e.g. Civil ATC" /></label>
+        <label class="dp-row" id="dp-classification-row"><span>Classification</span><input type="text" id="dp-classification" placeholder="SFC-FL120" /></label>
+        <label class="dp-row" id="dp-type-row"><span>Type</span>
+          <select id="dp-type">
+            <option value="surface_to_air">surface-to-air</option>
+            <option value="radar">radar</option>
+            <option value="ecm">ECM</option>
+            <option value="sigint">SIGINT</option>
+            <option value="other">other</option>
+          </select>
+        </label>
+        <label class="dp-row" id="dp-confidence-row"><span>Confidence</span><input type="number" id="dp-confidence" step="0.01" min="0" max="1" value="0.7" /></label>
+        <label class="dp-row" id="dp-poi-type-row"><span>POI type</span>
+          <select id="dp-poi-type">
+            <option value="target">target</option>
+            <option value="observation">observation post</option>
+            <option value="checkpoint">checkpoint</option>
+            <option value="fob">forward base</option>
+            <option value="other">other</option>
+          </select>
+        </label>
+      </div>
+      <div class="dp-foot">
+        <button class="sd-btn" id="dp-cancel">Cancel</button>
+        <button class="sd-btn" id="dp-save" style="background:var(--ink-0); color:var(--paper); border-color:var(--ink-0);">Save</button>
+      </div>
+    </div>
+
+    <!-- Cursor MGRS overlay — слева сверху, под doc-frame border -->
+    <div class="hud-cursor hidden" id="hud-cursor">
+      <table>
+        <tr><th colspan="2">Cursor · live</th></tr>
+        <tr><td>MGRS</td><td class="mono" id="cur-mgrs">—</td></tr>
+        <tr><td>Lat</td><td class="mono" id="cur-lat">—</td></tr>
+        <tr><td>Lon</td><td class="mono" id="cur-lon">—</td></tr>
+        <tr><td>Elev</td><td class="mono" id="cur-elev">—</td></tr>
+        <tr><td>RNG → sel</td><td class="mono" id="cur-rng">—</td></tr>
+        <tr><td>BRG</td><td class="mono" id="cur-brg">—</td></tr>
+      </table>
     </div>
 
     <button class="fab" id="fab-order" title="New mission">
@@ -141,72 +435,309 @@
   </section>
 
   <aside class="right-panel">
+    <!-- Active Missions — одна строка на миссию: задача + прогресс рядом -->
     <div class="panel-head">
-      <span>Active Taskings · Tab. 3</span>
+      <span>Active Missions</span>
       <span class="panel-count mono" id="missions-count">0</span>
     </div>
-    <div class="missions-list" id="missions-list"></div>
+    <div class="taskings-table-wrap">
+      <table class="taskings-table" id="missions-list">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>UAS</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th class="tt-prog-h">Progress</th>
+          </tr>
+        </thead>
+        <tbody id="taskings-tbody">
+          <tr class="tt-empty"><td colspan="5">— no active missions —</td></tr>
+        </tbody>
+      </table>
+    </div>
 
     <div class="panel-head">
-      <span>Event Log · App. A · STANAG-4609</span>
+      <span>PTT · Comms (UI stub)</span>
+      <span class="panel-count mono" id="ptt-count">0 ch</span>
+    </div>
+    <div class="ptt-bar" id="ptt-bar"></div>
+
+    <div class="panel-head">
+      <span>Event Log</span>
       <button class="icon-btn" id="btn-clear-events" title="Clear log">⌫</button>
     </div>
     <div class="event-log mono" id="event-log"></div>
   </aside>
 </main>
 
-<div class="sandbox-dock hidden" id="sandbox-dock">
-  <span class="sandbox-title">SANDBOX TOOLS</span>
-  <button class="sandbox-btn" data-action="inject-gps-loss">GPS LOSS</button>
-  <button class="sandbox-btn" data-action="drain-battery">DRAIN BATT</button>
-  <button class="sandbox-btn" data-action="wind">WIND +10 m/s</button>
-  <button class="sandbox-btn" data-action="spawn">SPAWN DRONE</button>
-  <span class="sandbox-note">virtual-mode tools</span>
-</div>
-
 <div class="modal-bg hidden" id="modal-bg">
-  <div class="modal">
+  <div class="modal modal-wide">
     <div class="modal-head">
       <span>NEW MISSION ORDER</span>
       <button class="icon-btn" id="modal-close">×</button>
     </div>
     <div class="modal-body">
-      <div class="modal-tip">Enter coordinates or <b>PICK</b> them on the map.</div>
-      <div class="field">
-        <label>PICKUP</label>
-        <div class="field-inputs">
-          <input type="number" id="from-lat" step="0.000001" placeholder="lat" class="mono" />
-          <input type="number" id="from-lon" step="0.000001" placeholder="lon" class="mono" />
-          <button class="mini-btn" id="pick-from">PICK</button>
+
+      <!-- ASSIGNMENT — кому и с каким приоритетом -->
+      <div class="modal-section">
+        <div class="modal-section-h">Assignment</div>
+        <div class="field">
+          <label>DRONE</label>
+          <div class="field-inputs">
+            <select id="m-drone" class="mono modal-select">
+              <option value="">Auto-assign · pick closest available</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>PRIORITY</label>
+          <div class="field-inputs">
+            <div class="seg-mini" id="m-priority-seg">
+              <!-- Приоритеты кроме Normal временно отключены -->
+              <button type="button" class="seg-mini-btn seg-mini-btn-disabled" data-priority="low" disabled title="Temporarily unavailable">Low</button>
+              <button type="button" class="seg-mini-btn active" data-priority="normal">Normal</button>
+              <button type="button" class="seg-mini-btn seg-mini-btn-disabled" data-priority="high" disabled title="Temporarily unavailable">High</button>
+              <button type="button" class="seg-mini-btn seg-mini-btn-disabled" data-priority="urgent" disabled title="Temporarily unavailable">Urgent</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="field">
-        <label>DROP</label>
-        <div class="field-inputs">
-          <input type="number" id="to-lat" step="0.000001" placeholder="lat" class="mono" />
-          <input type="number" id="to-lon" step="0.000001" placeholder="lon" class="mono" />
-          <button class="mini-btn" id="pick-to">PICK</button>
+
+      <!-- MISSION PROFILE / TYPE SELECTOR -->
+      <div class="modal-section">
+        <div class="modal-section-h">Mission profile</div>
+        <div class="field">
+          <label>TYPE</label>
+          <div class="field-inputs">
+            <div class="seg-mini" id="m-type-seg">
+              <button type="button" class="seg-mini-btn active" data-type="delivery">Delivery</button>
+              <button type="button" class="seg-mini-btn" data-type="isr">ISR</button>
+              <button type="button" class="seg-mini-btn" data-type="patrol">Patrol</button>
+              <!-- Sector observation временно отключён (см. submitMission guard) -->
+              <button type="button" class="seg-mini-btn seg-mini-btn-disabled" data-type="sector" disabled title="Temporarily unavailable">Sector observation</button>
+            </div>
+            <!-- legacy select kept hidden so existing JS that reads value still works -->
+            <select id="m-type" class="hidden">
+              <option value="delivery" selected>delivery</option>
+              <option value="isr">isr</option>
+              <option value="patrol">patrol</option>
+              <option value="sector">sector</option>
+            </select>
+          </div>
+        </div>
+        <div class="field two-inline">
+          <label>CRUISE</label>
+          <div class="field-inputs">
+            <input type="number" id="m-cruise-alt" step="1" min="5" max="500" value="60" class="mono" title="Cruise altitude" />
+            <span class="unit">m alt</span>
+            <span class="unit" title="Horizontal cruise speed is auto-selected (safe optimum)">speed · auto</span>
+          </div>
+        </div>
+        <div class="field two-inline">
+          <label>TAKEOFF</label>
+          <div class="field-inputs">
+            <select id="m-takeoff-profile" class="mono modal-select" title="How the drone gains altitude after liftoff">
+              <option value="vertical" selected>Vertical · climb straight to cruise</option>
+              <option value="inclined">Inclined · climb en-route to first WP</option>
+            </select>
+            <input type="number" id="m-takeoff-alt" step="1" min="3" max="50" value="15" class="mono" title="Initial liftoff altitude (used for Inclined; Vertical climbs to cruise)" />
+            <span class="unit">m liftoff</span>
+          </div>
+        </div>
+        <div class="field two-inline">
+          <label>OPTIONS</label>
+          <div class="field-inputs">
+            <label class="check-inline"><input type="checkbox" id="m-auto-rth" checked /><span>Auto-RTH after end (return to base &amp; land)</span></label>
+          </div>
         </div>
       </div>
-      <div class="field">
-        <label>PAYLOAD</label>
-        <div class="field-inputs">
-          <input type="number" id="weight" step="0.1" value="2.0" class="mono" />
-          <span class="unit">kg</span>
+
+      <!-- === Per-type fields === -->
+
+      <!-- DELIVERY -->
+      <div class="modal-section type-fields" data-type-show="delivery">
+        <div class="modal-section-h">Waypoints · Delivery</div>
+        <div class="modal-tip">Enter coordinates or <b>PICK</b> them on the map.</div>
+        <div class="field">
+          <label>PICKUP</label>
+          <div class="field-inputs">
+            <input type="number" id="from-lat" step="0.000001" placeholder="lat" class="mono" />
+            <input type="number" id="from-lon" step="0.000001" placeholder="lon" class="mono" />
+            <button class="mini-btn" id="pick-from">PICK</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>DROP</label>
+          <div class="field-inputs">
+            <input type="number" id="to-lat" step="0.000001" placeholder="lat" class="mono" />
+            <input type="number" id="to-lon" step="0.000001" placeholder="lon" class="mono" />
+            <button class="mini-btn" id="pick-to">PICK</button>
+          </div>
         </div>
       </div>
+
+      <!-- ISR -->
+      <div class="modal-section type-fields hidden" data-type-show="isr">
+        <div class="modal-section-h">Target · ISR</div>
+        <div class="modal-tip">Single target point with optional loiter / orbit.</div>
+        <div class="field">
+          <label>TARGET</label>
+          <div class="field-inputs">
+            <input type="number" id="isr-lat" step="0.000001" placeholder="lat" class="mono" />
+            <input type="number" id="isr-lon" step="0.000001" placeholder="lon" class="mono" />
+            <button type="button" class="mini-btn" data-pick-into="isr">PICK</button>
+          </div>
+        </div>
+        <div class="field two-inline">
+          <label>LOITER</label>
+          <div class="field-inputs">
+            <input type="number" id="m-loiter-s" min="0" max="600" step="5" value="60" class="mono" />
+            <span class="unit">sec on target</span>
+            <input type="number" id="m-orbit-radius" min="0" max="500" step="5" value="50" class="mono" />
+            <span class="unit">m orbit radius</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PATROL -->
+      <div class="modal-section type-fields hidden" data-type-show="patrol">
+        <div class="modal-section-h">Route · Patrol</div>
+        <div class="modal-tip">Pick 3-10 waypoints — the drone will loop the route N times.</div>
+        <div class="field">
+          <label>ROUTE</label>
+          <div class="field-inputs">
+            <span class="mono draft-display" id="m-route-display">— no waypoints —</span>
+            <button type="button" class="mini-btn" id="pick-route-btn">PICK ROUTE</button>
+            <button type="button" class="mini-btn" id="clear-route-btn">CLEAR</button>
+          </div>
+        </div>
+        <div class="field two-inline">
+          <label>OPTIONS</label>
+          <div class="field-inputs">
+            <input type="number" id="m-loops" min="1" max="20" step="1" value="3" class="mono" />
+            <span class="unit">loops</span>
+            <input type="number" id="m-loiter-wp" min="0" max="120" step="5" value="0" class="mono" />
+            <span class="unit">sec at each WP</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTOR OBSERVATION (multi-drone) -->
+      <div class="modal-section type-fields hidden" data-type-show="sector">
+        <div class="modal-section-h">Sector · multi-drone observation</div>
+        <div class="modal-tip">Pick a sector polygon — area is split among N drones, each gets its own strip.</div>
+        <div class="field">
+          <label>SECTOR</label>
+          <div class="field-inputs">
+            <span class="mono draft-display" id="m-sector-display">— no sector —</span>
+            <button type="button" class="mini-btn" id="pick-sector-btn">PICK SECTOR</button>
+            <button type="button" class="mini-btn" id="clear-sector-btn">CLEAR</button>
+          </div>
+        </div>
+        <div class="field two-inline">
+          <label>DRONES</label>
+          <div class="field-inputs">
+            <input type="number" id="m-n-drones" min="2" max="8" step="1" value="3" class="mono" />
+            <span class="unit">airframes</span>
+            <input type="number" id="m-swath-sec" min="10" max="500" step="5" value="80" class="mono" />
+            <span class="unit">m swath</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>PATTERN</label>
+          <div class="field-inputs">
+            <div class="seg-mini" id="m-pattern-sec-seg">
+              <button type="button" class="seg-mini-btn active" data-pattern="lawnmower">Lawnmower</button>
+              <button type="button" class="seg-mini-btn" data-pattern="box">Box</button>
+            </div>
+          </div>
+        </div>
+        <div class="field two-inline">
+          <label>LOOPS</label>
+          <div class="field-inputs">
+            <input type="number" id="m-sec-loops" min="1" max="20" step="1" value="2" class="mono" />
+            <span class="unit">passes per drone</span>
+            <span class="mono draft-display" id="m-est-coverage">— · —</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- NOTES -->
+      <div class="modal-section">
+        <div class="modal-section-h">Notes (optional · for AAR)</div>
+        <div class="field stack">
+          <textarea id="m-notes" class="modal-textarea" rows="2" placeholder="Operator notes, e.g. callsign, target descriptor, weather…"></textarea>
+        </div>
+      </div>
+
     </div>
     <div class="modal-foot">
+      <span class="modal-foot-hint mono" id="modal-foot-hint">Auto-assign · Normal · Delivery</span>
+      <div style="flex:1"></div>
       <button class="btn-secondary" id="modal-cancel">CANCEL</button>
       <button class="btn-primary" id="modal-submit">DISPATCH</button>
     </div>
   </div>
 </div>
 
+<!-- =================== SETTINGS DRAWER (minimal — drawings list + data) =================== -->
+<aside id="settings-drawer" class="settings-drawer hidden">
+  <div class="sd-head">
+    <span class="sd-title">Objects &amp; Data</span>
+    <button class="sd-close" id="sd-close" title="Close">×</button>
+  </div>
+  <div class="sd-body">
+
+    <div class="sd-section" id="sd-drawings-section">
+      <div class="sd-section-h">Drawn objects · <span class="sd-section-count mono" id="sd-drawings-count">0</span></div>
+      <p class="sd-hint">User-drawn KOZ / threats / POI / routes. Toggle visibility or delete individual items.</p>
+      <div class="sd-drawings-list" id="sd-drawings-list">
+        <div class="sd-empty">— no objects drawn yet —</div>
+      </div>
+      <button class="sd-btn sd-btn-warn" id="sd-clear-drawings">⌫ Clear all drawings</button>
+    </div>
+
+    <div class="sd-section">
+      <div class="sd-section-h">Data</div>
+      <button class="sd-btn" id="sd-export">⬇ Export drawings + settings (JSON)</button>
+      <button class="sd-btn" id="sd-reset">↺ Reset all to defaults</button>
+      <p class="sd-hint" style="margin-top:6px">Reset returns all toggles in the strip above to factory state and clears drawings.</p>
+    </div>
+
+  </div>
+</aside>
+
 <div id="boot-error" class="boot-error hidden"></div>
 
-<div class="classification bot">UNCLASSIFIED // FOR OFFICIAL USE ONLY · DRONE OPS DEMO</div>
+<!-- SANDBOX-DOCK скрыт по умолчанию; включается через Settings → Sandbox tools -->
+<div class="sandbox-dock hidden" id="sandbox-dock-bottom">
+  <span class="sandbox-title">SANDBOX TOOLS</span>
+  <button class="sandbox-btn" data-action="inject-gps-loss">GPS LOSS</button>
+  <button class="sandbox-btn" data-action="drain-battery">DRAIN BATT</button>
+  <button class="sandbox-btn" data-action="wind">WIND +10 m/s</button>
+  <button class="sandbox-btn" data-action="spawn">SPAWN DRONE</button>
+</div>
 
-<script src="/static/app.js?v=4"></script>
+<footer class="doc-foot">
+  <div class="df-grp">
+    <span class="df-l">Black Box</span>
+    <span class="df-v df-v-green" id="df-blackbox">REC · 0.0 KB</span>
+    <span class="df-l">Chksum</span>
+    <span class="df-v mono" id="df-chksum">SHA-256 0x—</span>
+  </div>
+  <div class="df-grp" id="df-cert-pills">
+    <span class="df-l">Cert</span>
+    <!-- pills заполняются JS из mission_context.certifications -->
+  </div>
+  <div class="df-grp">
+    <span class="df-l">Operator</span>
+    <span class="df-v mono" id="df-oper">—</span>
+    <span class="df-l">Page</span>
+    <span class="df-v mono">1 / 1</span>
+  </div>
+</footer>
+
+<script src="/static/app.js?v=25"></script>
 </body>
 </html>

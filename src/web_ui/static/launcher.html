@@ -1,116 +1,184 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Drone Ops · Launcher</title>
+  <title>Skybite · Mission Control</title>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/static/style.css?v=5" />
-  <link rel="stylesheet" href="/static/launcher.css?v=2" />
+  <link rel="stylesheet" href="/static/launcher.css?v=3" />
 </head>
 <body class="launcher-body">
 
-<div class="classification top">UNCLASSIFIED // FOR OFFICIAL USE ONLY · DRONE OPS DEMO</div>
-
+<!-- ===== Slim topbar ===== -->
 <header class="topbar">
   <div class="brand">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-      <circle cx="12" cy="12" r="9"/>
-      <path d="M12 3v18M3 12h18"/>
-      <circle cx="12" cy="12" r="3" fill="currentColor"/>
-    </svg>
+    <div class="brand-glyph">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 3v18M3 12h18"/>
+        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+      </svg>
+    </div>
     <div class="brand-text">
-      <div class="brand-title">SENTINEL UAS</div>
-      <div class="brand-sub">Launcher · v3.4</div>
+      <div class="brand-name">Skybite</div>
+      <div class="brand-sub">Mission Control · v3.4</div>
     </div>
   </div>
   <div class="topbar-spacer"></div>
-  <div class="clock">
-    <div id="clock-time" class="mono">--:--:--</div>
-    <div class="clock-tz">UTC · ZULU</div>
+  <div class="top-stat"><div class="ts-l">System</div><div class="ts-v green">Healthy</div></div>
+  <div class="top-stat"><div class="ts-l">MQTT broker</div><div class="ts-v">127.0.0.1:1883</div></div>
+  <div class="top-stat"><div class="ts-l">Saved profiles</div><div class="ts-v" id="ts-profiles">— <small>· loading</small></div></div>
+  <div class="top-clock">
+    <div class="tc-time mono" id="clock-time">--:--:--</div>
+    <div class="tc-sub">UTC · Zulu</div>
   </div>
 </header>
 
-<main class="launcher-main">
-  <div class="launcher-hero">
-    <div class="hero-eyebrow">Operating mode selection</div>
-    <div class="hero-title">Что запускаем сегодня?</div>
-    <div class="hero-sub">Выбери один из режимов работы. Можно сменить позже, остановив текущий и вернувшись на эту страницу.</div>
+<!-- ===== Main page ===== -->
+<main class="page">
+
+  <div class="hero">
+    <div>
+      <div class="hero-eyebrow">Operating mode</div>
+      <div class="hero-title">Select where to fly today.</div>
+    </div>
+    <div class="hero-meta">
+      <div class="hm-cell"><div class="hm-l">Uptime</div><div class="hm-v" id="hero-uptime">00:00</div></div>
+      <div class="hm-cell"><div class="hm-l">Last session</div><div class="hm-v">— <small>· —</small></div></div>
+      <div class="hm-cell"><div class="hm-l">Telemetry rate</div><div class="hm-v green">— <small>Hz</small></div></div>
+    </div>
   </div>
 
   <div class="launcher-grid">
 
-    <div class="launcher-card" id="card-sim" data-mode="sim">
-      <div class="card-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <path d="M3 9h18M9 3v18" />
-        </svg>
-      </div>
-      <div class="card-tag">SIMULATION</div>
-      <div class="card-title">Симуляция</div>
-      <div class="card-desc">PX4 SITL + виртуальные дроны. Полный пайплайн для разработки и проверки логики миссий без реального борта.</div>
-      <div class="card-status" id="status-sim">
-        <span class="status-dot" data-state="stopped"></span>
-        <span class="status-text">stopped</span>
-      </div>
-      <div class="sim-config" id="sim-config">
-        <label class="sim-config-label" for="sim-num-drones">Дронов</label>
-        <button type="button" class="num-step" id="num-minus" aria-label="-1">−</button>
-        <input type="number" id="sim-num-drones" min="1" max="10" value="2" class="mono" />
-        <button type="button" class="num-step" id="num-plus" aria-label="+1">+</button>
-        <span class="sim-config-hint mono" id="num-hint">~250MB RAM/дрон</span>
+    <!-- Simulation card -->
+    <div class="launcher-card accent-sim" id="card-sim" data-mode="sim">
+      <div class="card-body">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <rect x="3" y="3" width="18" height="18" rx="1.5"/>
+            <path d="M3 9h18M9 3v18"/>
+          </svg>
+        </div>
+        <div class="card-tag">Mode · 01</div>
+        <div class="card-title">Simulation</div>
+        <div class="card-desc">PX4 SITL with virtual airframes. Full mission pipeline for logic checks, planning, and rehearsals without touching real hardware.</div>
+        <div class="card-status" id="status-sim">
+          <div class="status-line">
+            <span class="status-dot" data-state="stopped"></span>
+            <span class="status-text">stopped</span>
+          </div>
+          <div class="status-aux mono">~250 MB / airframe</div>
+        </div>
+        <div class="sim-config" id="sim-config">
+          <span class="cfg-l">Airframes</span>
+          <button type="button" class="num-step" id="num-minus" aria-label="-1">−</button>
+          <input type="number" id="sim-num-drones" min="1" max="10" value="2" class="mono num-input" />
+          <button type="button" class="num-step" id="num-plus" aria-label="+1">+</button>
+          <span class="cfg-hint mono" id="num-hint">~500 MB · boot ~23 s</span>
+        </div>
       </div>
       <div class="card-actions">
-        <button class="btn btn-primary" id="btn-sim-start">▶️ Запустить</button>
-        <button class="btn btn-ghost hidden" id="btn-sim-open">🌐 Открыть UI</button>
-        <button class="btn btn-ghost hidden" id="btn-sim-stop">⏹ Остановить</button>
+        <button class="btn btn-primary" id="btn-sim-start">▶ Start</button>
+        <button class="btn btn-ghost hidden" id="btn-sim-open">↗ Open UI</button>
+        <button class="btn btn-ghost hidden" id="btn-sim-stop">⏹ Stop</button>
       </div>
     </div>
 
+    <!-- Real drone card -->
     <div class="launcher-card accent-real" id="card-real" data-mode="real">
-      <div class="card-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M12 2L2 12l10 10 10-10z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      </div>
-      <div class="card-tag">REAL DRONE</div>
-      <div class="card-title">Подключить реальный дрон</div>
-      <div class="card-desc">Параметры подключения, проверка готовности борта (heartbeat/GPS/батарея/калибровки), сохранение профиля, тестовые мини-полёты.</div>
-      <div class="card-status">
-        <span class="status-dot" data-state="ready"></span>
-        <span class="status-text">готов к настройке</span>
+      <div class="card-body">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M2 12 L12 2 L22 12 L12 22 Z"/>
+            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="card-tag">Mode · 02</div>
+        <div class="card-title">Connect real drone</div>
+        <div class="card-desc">Serial / UDP / TCP setup, heartbeat verification, sensor health checks, calibrations, and short verification flights before going operational.</div>
+        <div class="card-status">
+          <div class="status-line">
+            <span class="status-dot" data-state="ready"></span>
+            <span class="status-text">ready</span>
+          </div>
+          <div class="status-aux mono"><span id="real-profile-count">0</span> saved profiles</div>
+        </div>
+        <div class="sim-config">
+          <span class="cfg-l">Last used</span>
+          <span class="cfg-last mono" id="real-last-used">—</span>
+          <span class="cfg-hint mono" id="real-last-conn">no profile yet</span>
+        </div>
       </div>
       <div class="card-actions">
-        <button class="btn btn-primary" id="btn-real-open">→ Открыть</button>
+        <button class="btn btn-primary" id="btn-real-open">→ Open setup</button>
+        <button class="btn btn-ghost" id="btn-local-launch">Local launch</button>
       </div>
     </div>
 
-    <div class="launcher-card disabled" id="card-fleet" data-mode="fleet">
-      <div class="card-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="6" cy="6" r="2" />
-          <circle cx="18" cy="6" r="2" />
-          <circle cx="6" cy="18" r="2" />
-          <circle cx="18" cy="18" r="2" />
-          <path d="M6 8v8M18 8v8M8 6h8M8 18h8" />
-        </svg>
-      </div>
-      <div class="card-tag">FLEET</div>
-      <div class="card-title">Управление полётами реальных дронов</div>
-      <div class="card-desc">Оркестрация флота из сохранённых профилей. Появится после готовности модуля «Подключить реальный дрон».</div>
-      <div class="card-status">
-        <span class="status-dot" data-state="disabled"></span>
-        <span class="status-text">скоро</span>
+    <!-- Fleet card -->
+    <div class="launcher-card accent-fleet disabled" id="card-fleet" data-mode="fleet">
+      <div class="card-body">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="6" cy="6" r="2"/>
+            <circle cx="18" cy="6" r="2"/>
+            <circle cx="6" cy="18" r="2"/>
+            <circle cx="18" cy="18" r="2"/>
+            <path d="M6 8v8M18 8v8M8 6h8M8 18h8"/>
+          </svg>
+        </div>
+        <div class="card-tag">Mode · 03</div>
+        <div class="card-title">Fleet operations</div>
+        <div class="card-desc">Orchestrate multiple real airframes from saved profiles. Live taskings, mission timeline, multi-operator handoff. Requires at least one validated profile.</div>
+        <div class="card-status">
+          <div class="status-line">
+            <span class="status-dot" data-state="disabled"></span>
+            <span class="status-text">locked</span>
+          </div>
+          <div class="status-aux mono">in development</div>
+        </div>
+        <div class="sim-config">
+          <span class="cfg-l">Target</span>
+          <span class="cfg-last mono">0.6.0</span>
+          <span class="cfg-hint mono">roadmap · Q3</span>
+        </div>
       </div>
       <div class="card-actions">
-        <button class="btn btn-disabled" disabled>в разработке</button>
+        <button class="btn btn-disabled" disabled>Coming soon</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom: activity + shortcuts -->
+  <div class="bottom">
+
+    <div class="activity">
+      <div class="a-head">
+        <span class="a-t">Recent activity</span>
+        <span class="a-meta">session log</span>
+      </div>
+      <div class="a-list" id="activity-list">
+        <div class="a-row"><span class="a-ts mono">—</span><span class="a-msg">Launch page opened.</span><span class="a-tag">UI</span></div>
+      </div>
+    </div>
+
+    <div class="shortcuts">
+      <div class="a-head">
+        <span class="a-t">Shortcuts</span>
+        <span class="a-meta">⌘ + ?</span>
+      </div>
+      <div class="sc-list">
+        <div class="sc-row"><span class="sc-l">Start simulation</span><span class="kbd">⌘ S</span></div>
+        <div class="sc-row"><span class="sc-l">Open setup</span><span class="kbd">⌘ R</span></div>
+        <div class="sc-row"><span class="sc-l">Reload</span><span class="kbd">⌘ ⇧ R</span></div>
+        <div class="sc-row"><span class="sc-l">Help</span><span class="kbd">?</span></div>
       </div>
     </div>
 
@@ -119,10 +187,9 @@
   <div class="launcher-footer mono">
     <span id="launcher-msg"></span>
   </div>
+
 </main>
 
-<div class="classification bot">UNCLASSIFIED // FOR OFFICIAL USE ONLY · DRONE OPS DEMO</div>
-
-<script src="/static/launcher.js?v=1"></script>
+<script src="/static/launcher.js?v=2"></script>
 </body>
 </html>

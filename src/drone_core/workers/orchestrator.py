@@ -37,8 +37,34 @@ class Orchestrator:
         self._mission_vehicle: Dict[str, str] = {}
 
     # ---- выбор борта ----
-    async def _select_vehicle(self) -> Optional[str]:
+    async def _select_vehicle(self, preferred_id: Optional[str] = None) -> Optional[str]:
+        """Возвращает id свободного борта.
+        Если preferred_id указан — пытается использовать именно его (если он
+        IDLE и не занят). Иначе fallback к auto-assign по SoC."""
         allv = await self.fleet.list_all()
+        # === Диагностический dump fleet'а для отладки multi-drone проблем ===
+        fleet_str = ", ".join(f"{v.id}={v.status.value if hasattr(v.status, 'value') else v.status}" for v in allv)
+        busy_str = ",".join(self._busy_vehicles) or "—"
+        print(f"   [FLEET DUMP] preferred={preferred_id} · fleet=[{fleet_str}] · busy={{{busy_str}}}")
+
+        # 1) Если оператор явно указал drone_id — проверяем что он свободен
+        if preferred_id:
+            for v in allv:
+                # ID борта в fleet может быть "veh_0" или "0" — поддерживаем оба формата
+                if v.id == preferred_id or f"veh_{v.id}" == preferred_id or v.id == f"veh_{preferred_id}":
+                    if v.status == VehicleStatus.IDLE and v.id not in self._busy_vehicles:
+                        log.info(f"[ORCH] honoring requested drone_id={preferred_id} → {v.id}")
+                        return v.id
+                    else:
+                        log.warning(
+                            f"[ORCH] requested drone_id={preferred_id} not available "
+                            f"(status={v.status}, busy={v.id in self._busy_vehicles}) — auto-assign"
+                        )
+                    break
+            else:
+                log.warning(f"[ORCH] requested drone_id={preferred_id} not in fleet — auto-assign")
+
+        # 2) Auto-assign: свободные борта с SoC > 40, отсортированы по SoC desc
         free = [
             v for v in allv
             if v.status == VehicleStatus.IDLE
@@ -62,6 +88,19 @@ class Orchestrator:
             print(f"🟣 [ORCH][STATE] {flow_state} -> {new_state}{suffix}")
             flow_state = new_state
 
+        # extras — дополнительные поля от UI (drone_id, mission_type, cruise_*, waypoints, …).
+        # Order их не знает, поэтому достаём отдельно и убираем из словаря.
+        extras = msg_payload.pop("extras", None) or {}
+        requested_drone = extras.get("drone_id") or None
+        custom_waypoints = extras.get("waypoints") or None
+        mission_type = (extras.get("mission_type") or "delivery").lower()
+        order_notes = (extras.get("notes") or None)
+        order_takeoff_profile = (extras.get("takeoff_profile") or "vertical").lower()
+        if requested_drone:
+            print(f"🟢 [ORCH][ORDER] extras.drone_id requested: {requested_drone}")
+        if custom_waypoints:
+            print(f"🟢 [ORCH][ORDER] extras.waypoints provided: {len(custom_waypoints)} pts · type={mission_type}")
+
         try:
             order = Order(**msg_payload)
             print(f"🟢 [ORCH] ✅ Order создан: {order.id}")
@@ -71,8 +110,48 @@ class Orchestrator:
             return
 
         # === Этап 1: Планирование ===
-        mission = plan_order(order)
-        print(f"🟢 [ORCH] ✏️ Маршрут построен ({len(mission.waypoints)} точек)")
+        # Если frontend прислал custom_waypoints — транслируем 1-в-1.
+        # Все «фазы» (takeoff/transit/descent/hover/climb/RTH/approach/LAND)
+        # формирует frontend и шлёт полный мастер-список. Orchestrator не
+        # вмешивается в семантику миссии.
+        if custom_waypoints:
+            from drone_core.domain.models import Mission, Waypoint, LLA
+            cruise_speed = float(extras.get("cruise_speed_mps") or 10.0)
+            mission_wps = []
+            for wp in custom_waypoints:
+                kind = str(wp.get("kind", "NAV")).upper()
+                if kind not in ("NAV", "LAND", "TAKEOFF", "RTL", "ORBIT"):
+                    kind = "NAV"
+                mission_wps.append(Waypoint(
+                    pos=LLA(
+                        lat=float(wp["lat"]),
+                        lon=float(wp["lon"]),
+                        alt=float(wp.get("alt", 60.0)),
+                    ),
+                    kind=kind,
+                    hold_s=float(wp.get("loiter_s") or wp.get("hold_s") or 0.0),
+                    speed_m_s=float(wp.get("speed_m_s") or cruise_speed),
+                    acceptance_radius_m=float(wp.get("acceptance_radius_m") or 5.0),
+                    orbit_radius_m=float(wp.get("orbit_radius_m") or 0.0),
+                ))
+            mission = Mission(
+                pickup=order.addr1,
+                dropoff=order.addr2,
+                payload_kg=order.payload_kg,
+                priority=order.priority,
+                mission_type=mission_type,
+                notes=order_notes,
+                takeoff_profile=order_takeoff_profile,
+                waypoints=mission_wps,
+            )
+            print(f"🟢 [ORCH] ✏️ Маршрут из UI-waypoints (passthrough, {len(mission.waypoints)} точек, type={mission_type})")
+        else:
+            # Legacy: Delivery без custom_waypoints → plan_order base→A→B→base.
+            mission = plan_order(order)
+            mission.mission_type = mission_type
+            mission.notes = order_notes
+            mission.takeoff_profile = order_takeoff_profile
+            print(f"🟢 [ORCH] ✏️ Маршрут построен plan_order ({len(mission.waypoints)} точек)")
         mission = await self.missions.create(mission)
         print(f"🟢 [ORCH] 💾 Миссия сохранена в репозитории: {mission.id}")
 
@@ -81,7 +160,7 @@ class Orchestrator:
         print(f"🟢 [ORCH] MQTT → mission/planned опубликована")
 
         # === Этап 2: Назначение борта ===
-        veh_id = await self._select_vehicle()
+        veh_id = await self._select_vehicle(preferred_id=requested_drone)
         if not veh_id:
             print("🔴 [ORCH] ❌ Нет свободных дронов — миссия остаётся PLANNED")
             _set_flow_state("error", reason="no available vehicle")
@@ -101,8 +180,15 @@ class Orchestrator:
         # === Этап 3: Загрузка маршрута ===
         upload_waiter = asyncio.get_running_loop().create_future()
         self._upload_waiters[mission.id] = upload_waiter
+        takeoff_alt_m = float(extras.get("takeoff_alt_m") or 15.0)
+        takeoff_profile = str(extras.get("takeoff_profile") or "vertical").lower()
+        cruise_alt_m = float(extras.get("cruise_alt_m") or 60.0)
         route_payload = {
             "mission_id": mission.id,
+            "takeoff_alt_m": takeoff_alt_m,
+            "takeoff_profile": takeoff_profile,
+            "cruise_alt_m": cruise_alt_m,
+            "mission_type": mission_type,
             "waypoints": [w.model_dump() for w in mission.waypoints],
         }
         await self._publish(topics.cmd(vehicle_id, "mission.upload"), route_payload)
