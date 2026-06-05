@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Drone Connection · Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f3f4ee;
+    --paper: #ffffff;
+    --paper-tint: #fafaf6;
+    --ink-0: #0a0e14;
+    --ink-1: #1f2937;
+    --ink-2: #4b5563;
+    --ink-3: #6b7280;
+    --ink-4: #9ca3af;
+    --rule: #d8dde3;
+    --hairline: #e6e9ee;
+    --blue: #1d4ed8;
+    --blue-soft: #eff4fc;
+    --green: #166534;
+    --green-soft: #f0f9f1;
+    --amber: #b45309;
+    --amber-soft: #fef7e8;
+    --red: #b91c1c;
+    --red-soft: #fdf2f2;
+    --shadow: 0 4px 14px rgba(10,14,20,0.06), 0 1px 3px rgba(10,14,20,0.04);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; min-height: 100%;
+    background: var(--bg); color: var(--ink-1);
+    font: 13px/1.45 'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; font-feature-settings: 'tnum' 1; }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* Top bar */
+  .topbar {
+    flex: 0 0 56px;
+    background: var(--paper);
+    border-bottom: 2px solid var(--ink-0);
+    display: flex; align-items: center;
+    padding: 0 22px; gap: 16px;
+  }
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--blue);
+    font: 600 12px 'IBM Plex Sans', sans-serif;
+    text-decoration: none;
+  }
+  .back-link:hover { text-decoration: underline; }
+  .brand { display: flex; align-items: center; gap: 12px; padding-left: 16px; border-left: 1px solid var(--hairline); }
+  .brand-glyph {
+    width: 26px; height: 26px;
+    border: 1.5px solid var(--ink-0);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand-name { font-weight: 700; font-size: 14px; letter-spacing: 0.04em; }
+  .brand-sub { font-size: 9px; color: var(--ink-3); letter-spacing: 0.26em; font-weight: 600; text-transform: uppercase; }
+  .top-spacer { flex: 1; }
+  .step-strip { display: flex; gap: 0; }
+  .step {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 14px;
+    border-left: 1px solid var(--hairline);
+    height: 56px;
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.18em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+  }
+  .step .s-no {
+    width: 22px; height: 22px;
+    border: 1.5px solid var(--ink-3);
+    background: var(--paper);
+    display: inline-flex; align-items: center; justify-content: center;
+    font: 700 11px 'IBM Plex Mono', monospace;
+    color: var(--ink-3);
+  }
+  .step.done .s-no { background: var(--green); color: #fff; border-color: var(--green); }
+  .step.done { color: var(--ink-0); }
+  .step.active { color: var(--ink-0); background: var(--paper-tint); }
+  .step.active .s-no { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+  /* Warn banner */
+  .warn-banner {
+    background: var(--amber-soft);
+    border-bottom: 1.5px solid var(--amber);
+    color: var(--amber);
+    text-align: center;
+    padding: 8px 16px;
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  /* Main grid */
+  .app {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 1px;
+    background-color: var(--rule);
+    min-height: 0;
+  }
+  .pane { background: var(--paper); display: flex; flex-direction: column; overflow-y: auto; }
+
+  /* Section heads */
+  .section-h {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--paper-tint);
+  }
+  .section-t {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.22em;
+    color: var(--ink-0);
+    text-transform: uppercase;
+  }
+  .section-count {
+    font: 700 11px 'IBM Plex Mono', monospace;
+    color: var(--blue);
+    background: var(--blue-soft);
+    padding: 1px 7px;
+    border: 1px solid var(--rule);
+  }
+
+  /* ===== Left: saved profiles ===== */
+  .sidebar { padding: 12px 14px; }
+  .sb-add {
+    display: block; width: 100%;
+    padding: 8px 12px;
+    background: var(--ink-0); color: var(--paper);
+    border: 0;
+    font: 700 11px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
+  .sb-add:hover { background: var(--blue); }
+  .profile-card {
+    border: 1px solid var(--rule);
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    background: var(--paper);
+    cursor: pointer;
+    position: relative;
+  }
+  .profile-card:hover { border-color: var(--ink-0); background: var(--paper-tint); }
+  .profile-card.active {
+    border-color: var(--amber);
+    background: var(--amber-soft);
+    box-shadow: inset 3px 0 0 var(--amber);
+  }
+  .pc-name { font-weight: 700; font-size: 13px; color: var(--ink-0); }
+  .pc-display { font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+  .pc-meta { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-2); margin-top: 5px; letter-spacing: 0.04em; }
+  .pc-status {
+    position: absolute; top: 10px; right: 10px;
+    display: flex; align-items: center; gap: 5px;
+    font: 700 8px 'IBM Plex Mono', monospace;
+    letter-spacing: 0.14em;
+    color: var(--green);
+  }
+  .pc-status::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 0 2px var(--green-soft);
+  }
+  .pc-status.stale { color: var(--ink-3); }
+  .pc-status.stale::before { background: var(--ink-4); box-shadow: none; }
+
+  /* ===== Right: wizard ===== */
+  .wizard {
+    padding: 24px 28px 32px;
+    max-width: 920px;
+    width: 100%;
+  }
+  .w-head {
+    margin-bottom: 22px;
+    padding-bottom: 18px;
+    border-bottom: 1.5px solid var(--ink-0);
+  }
+  .w-eyebrow {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.28em;
+    color: var(--amber);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .w-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--ink-0);
+    letter-spacing: -0.01em;
+  }
+  .w-sub {
+    color: var(--ink-2);
+    margin-top: 6px;
+    font-size: 13px;
+  }
+
+  /* Card containers in wizard */
+  .panel {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    margin-bottom: 18px;
+    position: relative;
+  }
+  .panel::before {
+    content: '';
+    display: block;
+    height: 3px;
+    background: var(--ink-0);
+  }
+  .panel.accent-amber::before { background: var(--amber); }
+  .panel.accent-blue::before { background: var(--blue); }
+  .panel.accent-green::before { background: var(--green); }
+  .p-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .p-t {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.22em;
+    color: var(--ink-0);
+    text-transform: uppercase;
+  }
+  .p-sub { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); }
+  .p-body { padding: 18px; }
+
+  /* Form rows */
+  .field {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 18px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .field.stack { align-items: flex-start; padding: 6px 0; }
+  .field-l {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.16em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .field-l .hint { font-weight: 500; color: var(--ink-4); font-size: 10px; letter-spacing: 0; text-transform: none; }
+  .field input[type=text], .field input[type=number], .field select, .field textarea {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-1);
+    font: 500 13px 'IBM Plex Mono', monospace;
+    outline: none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--amber);
+    outline: 2px solid var(--amber-soft);
+    outline-offset: -2px;
+  }
+  .field textarea { resize: vertical; min-height: 50px; font-family: inherit; }
+
+  /* Segment buttons (Serial / UDP / TCP, baud) */
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--rule);
+    overflow: hidden;
+    background: var(--paper);
+  }
+  .seg-btn {
+    padding: 7px 14px;
+    background: transparent;
+    border: 0;
+    border-right: 1px solid var(--rule);
+    color: var(--ink-2);
+    font: 700 11px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .seg-btn:last-child { border-right: 0; }
+  .seg-btn:hover { background: var(--paper-tint); color: var(--ink-0); }
+  .seg-btn.active { background: var(--amber); color: var(--paper); }
+
+  /* Inline two-col */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* Actions */
+  .actions {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 16px;
+    border-top: 1px solid var(--hairline);
+    margin-top: 16px;
+  }
+  .btn {
+    padding: 9px 18px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-0);
+    font: 700 11px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.16em;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .btn:hover:not(:disabled) { background: var(--paper-tint); border-color: var(--ink-0); }
+  .btn-primary {
+    background: var(--ink-0);
+    color: var(--paper);
+    border-color: var(--ink-0);
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--amber); border-color: var(--amber); }
+  .btn-secondary { color: var(--ink-2); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Test results — check grid */
+  .check-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .check {
+    padding: 12px 14px;
+    border-right: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    background: var(--paper);
+    position: relative;
+  }
+  .check::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--ink-3);
+  }
+  .check.ok::before { background: var(--green); }
+  .check.warn::before { background: var(--amber); }
+  .check.bad::before { background: var(--red); }
+  .check.ok { background: var(--green-soft); }
+  .check.warn { background: var(--amber-soft); }
+  .check.bad { background: var(--red-soft); }
+  .check:nth-child(3n) { border-right: 0; }
+  .ch-l { font: 700 9px 'IBM Plex Sans', sans-serif; letter-spacing: 0.18em; color: var(--ink-3); text-transform: uppercase; }
+  .ch-v { font: 700 14px 'IBM Plex Mono', monospace; color: var(--ink-0); margin-top: 3px; }
+  .check.ok .ch-v { color: var(--green); }
+  .check.warn .ch-v { color: var(--amber); }
+  .check.bad .ch-v { color: var(--red); }
+  .ch-sub { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-2); margin-top: 2px; }
+
+  /* Result summary banner */
+  .result-banner {
+    background: var(--green-soft);
+    border: 1px solid var(--green);
+    padding: 14px 18px;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 16px;
+  }
+  .result-banner .rb-l {
+    font: 700 11px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.2em;
+    color: var(--green);
+    text-transform: uppercase;
+  }
+  .result-banner .rb-msg { color: var(--ink-1); flex: 1; }
+  .result-banner.bad { background: var(--red-soft); border-color: var(--red); }
+  .result-banner.bad .rb-l { color: var(--red); }
+
+  /* Raw output */
+  .raw {
+    margin-top: 14px;
+    background: var(--paper-tint);
+    border: 1px solid var(--rule);
+    padding: 10px 12px;
+    max-height: 180px;
+    overflow-y: auto;
+    font: 500 10.5px/1.6 'IBM Plex Mono', monospace;
+    color: var(--ink-2);
+    white-space: pre-wrap;
+  }
+  .raw .ln-ts { color: var(--ink-3); }
+  .raw .ln-ok { color: var(--green); }
+  .raw .ln-warn { color: var(--amber); }
+  .raw .ln-bad { color: var(--red); }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<header class="topbar">
+  <a href="#" class="back-link">← Back to menu</a>
+  <div class="brand">
+    <div class="brand-glyph">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="3" fill="currentColor"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">Real drone setup</div>
+      <div class="brand-sub">connection wizard</div>
+    </div>
+  </div>
+  <div class="top-spacer"></div>
+  <div class="step-strip">
+    <div class="step done"><span class="s-no">1</span><span>Channel</span></div>
+    <div class="step active"><span class="s-no">2</span><span>Parameters</span></div>
+    <div class="step"><span class="s-no">3</span><span>Test</span></div>
+    <div class="step"><span class="s-no">4</span><span>Save</span></div>
+  </div>
+</header>
+
+<div class="warn-banner mono">⚠ Real drone mode · arming and commands will move physical hardware</div>
+
+<!-- Main app -->
+<main class="app">
+
+  <!-- LEFT: saved profiles -->
+  <aside class="pane">
+    <div class="section-h">
+      <span class="section-t">Saved profiles</span>
+      <span class="section-count">3</span>
+    </div>
+    <div class="sidebar">
+      <button class="sb-add">+ New profile</button>
+
+      <div class="profile-card active">
+        <div class="pc-status">live</div>
+        <div class="pc-name">x500_main</div>
+        <div class="pc-display">X500 · primary quad</div>
+        <div class="pc-meta">serial /dev/ttyUSB0 · 57600</div>
+      </div>
+
+      <div class="profile-card">
+        <div class="pc-status">live</div>
+        <div class="pc-name">quad_test</div>
+        <div class="pc-display">test rig · bench</div>
+        <div class="pc-meta">serial /dev/ttyACM0 · 921600</div>
+      </div>
+
+      <div class="profile-card">
+        <div class="pc-status stale">stale</div>
+        <div class="pc-name">field_unit_02</div>
+        <div class="pc-display">field unit · F450</div>
+        <div class="pc-meta">udp 0.0.0.0 : 14550</div>
+      </div>
+    </div>
+
+    <div class="section-h" style="border-top:1px solid var(--rule)">
+      <span class="section-t">Tips</span>
+    </div>
+    <div style="padding:12px 16px;font-size:11.5px;line-height:1.6;color:var(--ink-2)">
+      <p style="margin-bottom:8px"><b>Serial</b> is the most reliable for benchtop. Use 57600 with SiK radios, 921600 with direct USB-C.</p>
+      <p style="margin-bottom:8px"><b>UDP</b> works through MAVLink-router. Bind to <span class="mono" style="color:var(--ink-0)">0.0.0.0:14550</span> to accept any source.</p>
+      <p><b>TCP</b> is best across LAN. Same port pattern.</p>
+    </div>
+
+  </aside>
+
+  <!-- RIGHT: wizard -->
+  <section class="pane">
+    <div class="wizard">
+
+      <div class="w-head">
+        <div class="w-eyebrow">Step 2 of 4 · Parameters</div>
+        <div class="w-title">x500_main · configure connection</div>
+        <div class="w-sub">Verify hardware link parameters, then move to step 3 to validate heartbeat and sensor health.</div>
+      </div>
+
+      <!-- ===== Channel panel ===== -->
+      <div class="panel accent-amber">
+        <div class="p-head"><span class="p-t">§A · Channel</span><span class="p-sub">type & port</span></div>
+        <div class="p-body">
+          <div class="field">
+            <label class="field-l">Channel type</label>
+            <div class="seg">
+              <button class="seg-btn active">Serial</button>
+              <button class="seg-btn">UDP</button>
+              <button class="seg-btn">TCP</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-l">Serial port <button style="background:none;border:0;color:var(--blue);font-size:11px;cursor:pointer">↻ refresh</button></label>
+            <select>
+              <option>/dev/ttyUSB0  [FT232R USB UART · 0403:6001]</option>
+              <option>/dev/ttyACM0  [PX4 FMU · 26AC:0011]</option>
+              <option>/dev/ttyUSB1  [SiK Radio v3 · 0403:6015]</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-l">Baud rate</label>
+            <div class="seg">
+              <button class="seg-btn active">57600</button>
+              <button class="seg-btn">115200</button>
+              <button class="seg-btn">921600</button>
+              <button class="seg-btn">Custom</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Airframe panel ===== -->
+      <div class="panel accent-blue">
+        <div class="p-head"><span class="p-t">§B · Airframe</span><span class="p-sub">basic descriptors</span></div>
+        <div class="p-body">
+          <div class="field">
+            <label class="field-l">Profile name<span class="hint">letters · digits · _ -</span></label>
+            <input type="text" value="x500_main" />
+          </div>
+          <div class="field">
+            <label class="field-l">Display name</label>
+            <input type="text" value="X500 · primary quad" />
+          </div>
+          <div class="two-col">
+            <div class="field" style="display:block">
+              <label class="field-l">Frame</label>
+              <input type="text" value="X500" style="margin-top:6px" />
+            </div>
+            <div class="field" style="display:block">
+              <label class="field-l">Battery cells</label>
+              <input type="number" value="6" style="margin-top:6px" />
+            </div>
+          </div>
+          <div class="two-col">
+            <div class="field" style="display:block">
+              <label class="field-l">Min voltage <span class="hint">cell-low alert</span></label>
+              <input type="number" step="0.1" value="3.5" style="margin-top:6px" />
+            </div>
+            <div class="field" style="display:block">
+              <label class="field-l">Min battery %</label>
+              <input type="number" value="20" style="margin-top:6px" />
+            </div>
+          </div>
+          <div class="field stack">
+            <label class="field-l">Notes</label>
+            <textarea>Reused props from May service. ESC #2 marked for replacement next 10 h.</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Test results panel ===== -->
+      <div class="panel accent-green">
+        <div class="p-head"><span class="p-t">§C · Test connection · last run</span><span class="p-sub">12.3 s · grpc :50051</span></div>
+        <div style="padding:0">
+
+          <div class="result-banner" style="margin:14px 16px 12px">
+            <div>
+              <div class="rb-l">All checks passed</div>
+              <div class="rb-msg" style="margin-top:4px;font-size:11.5px">Heartbeat received, GPS RTK fix, battery healthy, calibrations OK. Airframe is armable.</div>
+            </div>
+            <div style="text-align:right">
+              <div class="mono" style="font-size:11px;color:var(--ink-3)">verified</div>
+              <div class="mono" style="font-size:11px;color:var(--ink-0);font-weight:700">12.3 s</div>
+            </div>
+          </div>
+
+          <div class="check-grid">
+            <div class="check ok">
+              <div class="ch-l">Heartbeat</div>
+              <div class="ch-v">✓ 1.0 Hz</div>
+              <div class="ch-sub">first beat after 0.8 s</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">Firmware</div>
+              <div class="ch-v">v1.14.3</div>
+              <div class="ch-sub">PX4 · custom build</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">Flight mode</div>
+              <div class="ch-v">HOLD</div>
+              <div class="ch-sub">disarmed</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">GPS fix</div>
+              <div class="ch-v">RTK · 24 SV</div>
+              <div class="ch-sub">HDOP 0.6 · VDOP 0.9</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">Battery</div>
+              <div class="ch-v">24.2 V · 92%</div>
+              <div class="ch-sub">cell ∆ 12 mV</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">Gyro calib</div>
+              <div class="ch-v">✓ PASS</div>
+              <div class="ch-sub">bias within env.</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">Accel calib</div>
+              <div class="ch-v">✓ PASS</div>
+              <div class="ch-sub">6-axis verified</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">Mag calib</div>
+              <div class="ch-v">✓ PASS</div>
+              <div class="ch-sub">field 488 μT</div>
+            </div>
+            <div class="check warn">
+              <div class="ch-l">Home position</div>
+              <div class="ch-v">PENDING</div>
+              <div class="ch-sub">set automatically on arm</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">Global pos</div>
+              <div class="ch-v">✓ OK</div>
+              <div class="ch-sub">EKF healthy</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">RC link</div>
+              <div class="ch-v">✓ ARMED</div>
+              <div class="ch-sub">failsafe = HOLD</div>
+            </div>
+            <div class="check ok">
+              <div class="ch-l">Armable</div>
+              <div class="ch-v">✓ READY</div>
+              <div class="ch-sub">pre-arm checks pass</div>
+            </div>
+          </div>
+
+          <div style="padding:0 16px 16px">
+            <div class="raw">
+<span class="ln-ts">[+00.0s]</span> opening serial /dev/ttyUSB0 @ 57600
+<span class="ln-ts">[+00.4s]</span> mavsdk server started on :50051
+<span class="ln-ts">[+00.8s]</span> <span class="ln-ok">HEARTBEAT received · system_id=1 · component_id=1</span>
+<span class="ln-ts">[+01.2s]</span> autopilot version: PX4 v1.14.3 (build 8a91f2)
+<span class="ln-ts">[+02.0s]</span> subscribing to telemetry: position, attitude, battery, gps_info
+<span class="ln-ts">[+04.6s]</span> <span class="ln-ok">GPS fix acquired: 3D-RTK · 24 satellites</span>
+<span class="ln-ts">[+05.1s]</span> battery: 24.21 V · current −3.1 A · 92.0%
+<span class="ln-ts">[+06.8s]</span> sensor health: gyro=OK · accel=OK · mag=OK · baro=OK
+<span class="ln-ts">[+08.2s]</span> EKF check: global_position=OK · local_position=OK
+<span class="ln-ts">[+09.0s]</span> <span class="ln-warn">home position not set — will be set on arm</span>
+<span class="ln-ts">[+10.4s]</span> RC link armed · failsafe action: HOLD
+<span class="ln-ts">[+12.3s]</span> <span class="ln-ok">pre-arm checks PASS — airframe is armable</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-secondary">← Back</button>
+          <button class="btn">↻ Test again</button>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span style="font:600 11px 'IBM Plex Mono',monospace;color:var(--green)">✓ Validated · ready to save</span>
+          <button class="btn">💾 Save profile</button>
+          <button class="btn btn-primary">Continue → Test flights</button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

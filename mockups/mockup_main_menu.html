@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mission Control · Main Menu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f3f4ee;
+    --paper: #ffffff;
+    --paper-tint: #fafaf6;
+    --ink-0: #0a0e14;
+    --ink-1: #1f2937;
+    --ink-2: #4b5563;
+    --ink-3: #6b7280;
+    --ink-4: #9ca3af;
+    --rule: #d8dde3;
+    --hairline: #e6e9ee;
+    --blue: #1d4ed8;
+    --blue-soft: #eff4fc;
+    --green: #166534;
+    --green-soft: #f0f9f1;
+    --amber: #b45309;
+    --amber-soft: #fef7e8;
+    --red: #b91c1c;
+    --red-soft: #fdf2f2;
+    --shadow: 0 4px 14px rgba(10,14,20,0.06), 0 1px 3px rgba(10,14,20,0.04);
+    --shadow-lg: 0 12px 32px rgba(10,14,20,0.10), 0 2px 6px rgba(10,14,20,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; min-height: 100%;
+    background: var(--bg); color: var(--ink-1);
+    font: 13px/1.45 'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; font-feature-settings: 'tnum' 1; }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* ===== Slim top bar ===== */
+  .topbar {
+    flex: 0 0 56px;
+    background: var(--paper);
+    border-bottom: 2px solid var(--ink-0);
+    display: flex;
+    align-items: center;
+    padding: 0 22px;
+    gap: 18px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-glyph {
+    width: 28px; height: 28px;
+    border: 1.5px solid var(--ink-0);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-0);
+  }
+  .brand-name { font-weight: 700; font-size: 15px; letter-spacing: 0.04em; }
+  .brand-sub { font-size: 9px; color: var(--ink-3); letter-spacing: 0.26em; font-weight: 600; text-transform: uppercase; }
+
+  .top-spacer { flex: 1; }
+
+  .top-stat {
+    display: flex; flex-direction: column;
+    padding: 0 14px;
+    border-left: 1px solid var(--hairline);
+    height: 56px;
+    justify-content: center;
+  }
+  .ts-l { font-size: 8px; color: var(--ink-3); letter-spacing: 0.22em; font-weight: 700; text-transform: uppercase; }
+  .ts-v { font: 700 13px 'IBM Plex Mono', monospace; color: var(--ink-0); margin-top: 2px; letter-spacing: 0.04em; }
+  .ts-v.green { color: var(--green); }
+  .ts-v.amber { color: var(--amber); }
+  .ts-v small { font-size: 10px; color: var(--ink-3); font-weight: 500; margin-left: 2px; }
+
+  .top-clock {
+    display: flex; flex-direction: column; align-items: flex-end;
+    padding: 0 14px;
+    border-left: 1px solid var(--hairline);
+    height: 56px;
+    justify-content: center;
+    background: var(--paper-tint);
+  }
+  .tc-time { font: 700 16px 'IBM Plex Mono', monospace; color: var(--ink-0); letter-spacing: 0.04em; }
+  .tc-sub { font-size: 9px; color: var(--ink-3); letter-spacing: 0.24em; font-weight: 600; margin-top: 1px; }
+
+  /* ===== Main page ===== */
+  .page {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 40px 32px 24px;
+    gap: 30px;
+    max-width: 1280px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 28px;
+    align-items: end;
+    padding-bottom: 18px;
+    border-bottom: 1.5px solid var(--ink-0);
+  }
+  .hero-title {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink-0);
+    line-height: 1.1;
+  }
+  .hero-eyebrow {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.28em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .hero-meta {
+    display: flex; gap: 22px;
+  }
+  .hm-cell {
+    display: flex; flex-direction: column;
+    padding-left: 16px;
+    border-left: 1px solid var(--rule);
+  }
+  .hm-l { font-size: 9px; color: var(--ink-3); letter-spacing: 0.22em; font-weight: 700; text-transform: uppercase; }
+  .hm-v { font: 700 18px 'IBM Plex Mono', monospace; color: var(--ink-0); margin-top: 3px; letter-spacing: 0.04em; }
+  .hm-v.green { color: var(--green); }
+  .hm-v small { font-size: 11px; color: var(--ink-3); font-weight: 500; margin-left: 3px; }
+
+  /* ===== Cards grid ===== */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 22px;
+  }
+  @media (max-width: 1024px) {
+    .cards { grid-template-columns: 1fr; max-width: 480px; }
+  }
+
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    display: flex; flex-direction: column;
+    position: relative;
+    transition: border-color .15s, transform .15s, box-shadow .15s;
+    overflow: hidden;
+  }
+  .card:not(.locked):hover {
+    border-color: var(--ink-0);
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+  }
+  /* accent stripe per card type */
+  .card.accent-sim::before { background: var(--blue); }
+  .card.accent-real::before { background: var(--amber); }
+  .card.accent-fleet::before { background: var(--green); }
+  .card::before {
+    content: '';
+    display: block;
+    height: 4px;
+    background: var(--ink-3);
+  }
+  .card.locked { opacity: 0.55; }
+  .card.locked .card-action { cursor: not-allowed; }
+
+  .card-body { padding: 22px 24px 0; flex: 1; display: flex; flex-direction: column; }
+  .card-icon {
+    width: 48px; height: 48px;
+    border: 1.5px solid var(--ink-0);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 14px;
+    color: var(--ink-0);
+  }
+  .card-tag {
+    display: inline-block;
+    font: 700 9px 'IBM Plex Mono', monospace;
+    letter-spacing: 0.22em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--hairline);
+    margin-bottom: 8px;
+  }
+  .card.accent-sim .card-tag { color: var(--blue); }
+  .card.accent-real .card-tag { color: var(--amber); }
+  .card.accent-fleet .card-tag { color: var(--green); }
+  .card-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink-0);
+    letter-spacing: -0.005em;
+    margin-bottom: 8px;
+    line-height: 1.2;
+  }
+  .card-desc {
+    color: var(--ink-2);
+    font-size: 12.5px;
+    line-height: 1.55;
+    flex: 1;
+    margin-bottom: 16px;
+  }
+
+  /* status row inside card */
+  .card-status {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    margin-bottom: 14px;
+  }
+  .status-line {
+    display: flex; align-items: center; gap: 8px;
+    font: 700 10px 'IBM Plex Mono', monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ink-3);
+    box-shadow: 0 0 0 2px var(--paper-tint);
+  }
+  .status-dot.ready { background: var(--green); box-shadow: 0 0 0 2px var(--green-soft); }
+  .status-dot.warn { background: var(--amber); box-shadow: 0 0 0 2px var(--amber-soft); }
+  .status-dot.locked { background: var(--ink-4); }
+  .status-aux { font: 600 11px 'IBM Plex Mono', monospace; color: var(--ink-2); }
+
+  /* sim config (inline picker) */
+  .card-config { display: flex; align-items: center; gap: 8px; padding: 0 0 14px; }
+  .cfg-l { font: 700 9px 'IBM Plex Sans', sans-serif; letter-spacing: 0.2em; color: var(--ink-3); text-transform: uppercase; }
+  .num-step {
+    width: 26px; height: 26px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink-0);
+    font: 700 14px 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+  }
+  .num-step:hover { background: var(--paper-tint); border-color: var(--ink-0); }
+  .num-input {
+    width: 46px; height: 26px;
+    text-align: center;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink-0);
+    font: 700 13px 'IBM Plex Mono', monospace;
+    outline: none;
+  }
+  .cfg-hint {
+    margin-left: auto;
+    font: 600 10px 'IBM Plex Mono', monospace;
+    color: var(--ink-3);
+  }
+
+  .card-actions {
+    display: flex; gap: 8px; padding: 0 24px 22px;
+  }
+  .btn {
+    flex: 1;
+    padding: 10px 16px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-0);
+    font: 700 11px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.16em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .btn:hover:not(:disabled) { background: var(--paper-tint); border-color: var(--ink-0); }
+  .btn-primary {
+    background: var(--ink-0); color: var(--paper); border-color: var(--ink-0);
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--blue); border-color: var(--blue); }
+  .card.accent-real .btn-primary:hover { background: var(--amber); border-color: var(--amber); }
+  .card.accent-fleet .btn-primary:hover { background: var(--green); border-color: var(--green); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ===== Bottom: activity ticker + shortcuts ===== */
+  .bottom {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 24px;
+    padding-top: 12px;
+  }
+
+  .activity {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    overflow: hidden;
+  }
+  .a-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--paper-tint);
+  }
+  .a-t {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.22em;
+    color: var(--ink-0);
+    text-transform: uppercase;
+  }
+  .a-meta {
+    font: 600 10px 'IBM Plex Mono', monospace;
+    color: var(--ink-3);
+  }
+  .a-list { max-height: 132px; overflow-y: auto; }
+  .a-row {
+    display: grid;
+    grid-template-columns: 64px 1fr 90px;
+    gap: 12px;
+    padding: 6px 16px;
+    border-bottom: 1px dashed var(--hairline);
+    font-size: 12px;
+    align-items: center;
+  }
+  .a-row:last-child { border-bottom: 0; }
+  .a-ts { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); }
+  .a-msg { color: var(--ink-1); }
+  .a-tag {
+    font: 700 9px 'IBM Plex Mono', monospace;
+    letter-spacing: 0.14em;
+    color: var(--ink-0);
+    background: var(--paper-tint);
+    border: 1px solid var(--rule);
+    padding: 1px 6px;
+    text-align: center;
+  }
+  .a-tag.sim { color: var(--blue); border-color: var(--blue); }
+  .a-tag.real { color: var(--amber); border-color: var(--amber); }
+  .a-tag.fleet { color: var(--green); border-color: var(--green); }
+
+  .shortcuts {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+  }
+  .sc-list { padding: 8px 16px 12px; }
+  .sc-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0;
+    font-size: 12px;
+    border-bottom: 1px dashed var(--hairline);
+  }
+  .sc-row:last-child { border-bottom: 0; }
+  .sc-l { color: var(--ink-1); }
+  .kbd {
+    display: inline-flex;
+    padding: 2px 7px;
+    border: 1px solid var(--rule);
+    background: var(--paper-tint);
+    font: 700 10px 'IBM Plex Mono', monospace;
+    color: var(--ink-1);
+    letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== Slim topbar ===== -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-glyph">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 3v18M3 12h18"/>
+        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">Mission Control</div>
+      <div class="brand-sub">v3.4 · build a91f</div>
+    </div>
+  </div>
+  <div class="top-spacer"></div>
+  <div class="top-stat"><div class="ts-l">System</div><div class="ts-v green">Healthy</div></div>
+  <div class="top-stat"><div class="ts-l">MQTT broker</div><div class="ts-v">127.0.0.1:1883</div></div>
+  <div class="top-stat"><div class="ts-l">Saved profiles</div><div class="ts-v">3 <small>· 1 active</small></div></div>
+  <div class="top-stat"><div class="ts-l">Sessions today</div><div class="ts-v">12</div></div>
+  <div class="top-clock">
+    <div class="tc-time">00:23:14</div>
+    <div class="tc-sub">UTC · Zulu</div>
+  </div>
+</header>
+
+<!-- ===== Main page ===== -->
+<main class="page">
+
+  <div class="hero">
+    <div>
+      <div class="hero-eyebrow">Operating mode</div>
+      <div class="hero-title">Select where to fly today.</div>
+    </div>
+    <div class="hero-meta">
+      <div class="hm-cell"><div class="hm-l">Uptime</div><div class="hm-v">02:14</div></div>
+      <div class="hm-cell"><div class="hm-l">Last session</div><div class="hm-v">Simulation <small>· 2 d ago</small></div></div>
+      <div class="hm-cell"><div class="hm-l">Telemetry rate</div><div class="hm-v green">120 <small>Hz</small></div></div>
+    </div>
+  </div>
+
+  <div class="cards">
+
+    <!-- Simulation card -->
+    <div class="card accent-sim">
+      <div class="card-body">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <rect x="3" y="3" width="18" height="18" rx="1.5"/>
+            <path d="M3 9h18M9 3v18"/>
+          </svg>
+        </div>
+        <div class="card-tag">Mode · 01</div>
+        <div class="card-title">Simulation</div>
+        <div class="card-desc">PX4 SITL with virtual airframes. Full mission pipeline for logic checks, planning, and rehearsals without touching real hardware.</div>
+        <div class="card-status">
+          <div class="status-line"><span class="status-dot"></span>Stopped</div>
+          <div class="status-aux">~250 MB / airframe</div>
+        </div>
+        <div class="card-config">
+          <span class="cfg-l">Airframes</span>
+          <button class="num-step">−</button>
+          <input class="num-input" value="2" />
+          <button class="num-step">+</button>
+          <span class="cfg-hint">~500 MB · boot ~23 s</span>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-primary">▶ Start</button>
+        <button class="btn" disabled>Open UI</button>
+      </div>
+    </div>
+
+    <!-- Real drone card -->
+    <div class="card accent-real">
+      <div class="card-body">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M2 12 L12 2 L22 12 L12 22 Z"/>
+            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="card-tag">Mode · 02</div>
+        <div class="card-title">Connect real drone</div>
+        <div class="card-desc">Serial / UDP / TCP setup, heartbeat verification, sensor health checks, calibrations, and short verification flights before going operational.</div>
+        <div class="card-status">
+          <div class="status-line"><span class="status-dot ready"></span>Ready</div>
+          <div class="status-aux">3 saved profiles</div>
+        </div>
+        <div class="card-config" style="border-top:1px solid var(--hairline);padding-top:12px">
+          <span class="cfg-l">Last used</span>
+          <span style="font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-0)">x500_main</span>
+          <span class="cfg-hint">/dev/ttyUSB0 · 57600</span>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-primary">→ Open setup</button>
+        <button class="btn">Quick reconnect</button>
+      </div>
+    </div>
+
+    <!-- Fleet card -->
+    <div class="card accent-fleet locked">
+      <div class="card-body">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="6" cy="6" r="2"/>
+            <circle cx="18" cy="6" r="2"/>
+            <circle cx="6" cy="18" r="2"/>
+            <circle cx="18" cy="18" r="2"/>
+            <path d="M6 8v8M18 8v8M8 6h8M8 18h8"/>
+          </svg>
+        </div>
+        <div class="card-tag">Mode · 03</div>
+        <div class="card-title">Fleet operations</div>
+        <div class="card-desc">Orchestrate multiple real airframes from saved profiles. Live taskings, mission timeline, multi-operator handoff. Requires at least one validated profile.</div>
+        <div class="card-status">
+          <div class="status-line"><span class="status-dot locked"></span>Locked</div>
+          <div class="status-aux">in development</div>
+        </div>
+        <div class="card-config" style="border-top:1px solid var(--hairline);padding-top:12px">
+          <span class="cfg-l">Available</span>
+          <span style="font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-3)">— profiles —</span>
+          <span class="cfg-hint">target: 0.6.0</span>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn" disabled>Coming soon</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== Bottom row: activity + shortcuts ===== -->
+  <div class="bottom">
+
+    <div class="activity">
+      <div class="a-head">
+        <span class="a-t">Recent activity</span>
+        <span class="a-meta">last 12 events</span>
+      </div>
+      <div class="a-list">
+        <div class="a-row"><span class="a-ts">22:18:04</span><span class="a-msg">Simulation stopped cleanly — 14 missions, 0 failures.</span><span class="a-tag sim">SIM</span></div>
+        <div class="a-row"><span class="a-ts">22:08:12</span><span class="a-msg">Real profile <b>x500_main</b> health check passed.</span><span class="a-tag real">REAL</span></div>
+        <div class="a-row"><span class="a-ts">21:54:21</span><span class="a-msg">Simulation started · 4 airframes spawned.</span><span class="a-tag sim">SIM</span></div>
+        <div class="a-row"><span class="a-ts">21:51:09</span><span class="a-msg">Profile <b>quad_test</b> created · serial /dev/ttyACM0.</span><span class="a-tag real">REAL</span></div>
+        <div class="a-row"><span class="a-ts">20:42:30</span><span class="a-msg">UI settings reset to defaults by operator.</span><span class="a-tag">UI</span></div>
+      </div>
+    </div>
+
+    <div class="shortcuts">
+      <div class="a-head">
+        <span class="a-t">Shortcuts</span>
+        <span class="a-meta">⌘ + ?</span>
+      </div>
+      <div class="sc-list">
+        <div class="sc-row"><span class="sc-l">Start simulation</span><span class="kbd">⌘ S</span></div>
+        <div class="sc-row"><span class="sc-l">Open setup</span><span class="kbd">⌘ R</span></div>
+        <div class="sc-row"><span class="sc-l">Reload</span><span class="kbd">⌘ ⇧ R</span></div>
+        <div class="sc-row"><span class="sc-l">Help</span><span class="kbd">?</span></div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+</body>
+</html>

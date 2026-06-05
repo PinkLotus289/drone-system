@@ -1,0 +1,47 @@
+# =====================================================================
+#  Skybite · Mission Context
+#  Централизованная "витрина" UI: всё что показывается в шапке/футере
+#  и на тактической карте, что не приходит из живой телеметрии.
+#
+#  Меняется без перекомпиляции: правка yaml → перезапуск uvicorn.
+# =====================================================================
+
+operation:
+  # Имя и номер операции — отображается в шапке (mission strip)
+  name: SKYBITE OPS
+  number: "01"
+  # Сектор зоны ответственности (AOR)
+  sector: K-7
+  # Маркировка релиза/распространения (FVEY / NATO / NOFORN / unset)
+  rel: NATO
+  # Classification banner (top + bottom). Полный текст одной строкой.
+  classification: "UNCLASSIFIED // FOR OFFICIAL USE ONLY"
+  # Канал управления — основной + резервный
+  datalink_primary: AES-256
+  datalink_backup: SAT-2 STBY
+
+operator:
+  # Имя оператора в шапке + footer audit-trail
+  name: "M. VOLK"
+  clearance: CL-3
+  # Session ID — может генериться при login; для демо хардкод
+  session_id: "0x7F2A"
+
+# Сертификации, отображаемые pills'ами в footer
+certifications:
+  - FIPS 140-3
+  - DO-178C
+  - STANAG 4586
+  - STANAG 4609
+
+# Keep-Out Zones / Threat zones — раньше задавались здесь статически.
+# Теперь рисуются оператором через Drawing Tools на карте, сохраняются в localStorage.
+# Эти ключи оставлены пустыми ради обратной совместимости API /api/mission_context.
+keep_out_zones: []
+threats: []
+
+# UI-defaults — оставлено для будущих use-cases (например, авто-AOR кольца через настройки).
+# Сейчас не используется кодом.
+ui_defaults:
+  aor_radius_m: 2000
+  aor_inner_rings: [1000, 500]

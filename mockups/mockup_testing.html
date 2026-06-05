@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pre-flight Testing · x500_main</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f3f4ee;
+    --paper: #ffffff;
+    --paper-tint: #fafaf6;
+    --ink-0: #0a0e14;
+    --ink-1: #1f2937;
+    --ink-2: #4b5563;
+    --ink-3: #6b7280;
+    --ink-4: #9ca3af;
+    --rule: #d8dde3;
+    --hairline: #e6e9ee;
+    --blue: #1d4ed8;
+    --blue-soft: #eff4fc;
+    --green: #166534;
+    --green-soft: #f0f9f1;
+    --amber: #b45309;
+    --amber-soft: #fef7e8;
+    --red: #b91c1c;
+    --red-soft: #fdf2f2;
+    --shadow: 0 4px 14px rgba(10,14,20,0.06), 0 1px 3px rgba(10,14,20,0.04);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; min-height: 100%;
+    background: var(--bg); color: var(--ink-1);
+    font: 13px/1.45 'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; font-feature-settings: 'tnum' 1; }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* Top bar */
+  .topbar {
+    flex: 0 0 56px;
+    background: var(--paper);
+    border-bottom: 2px solid var(--ink-0);
+    display: flex; align-items: center;
+    padding: 0 22px; gap: 16px;
+  }
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--blue);
+    font: 600 12px 'IBM Plex Sans', sans-serif;
+    text-decoration: none;
+  }
+  .back-link:hover { text-decoration: underline; }
+  .brand { display: flex; align-items: center; gap: 12px; padding-left: 16px; border-left: 1px solid var(--hairline); }
+  .brand-glyph {
+    width: 26px; height: 26px;
+    border: 1.5px solid var(--ink-0);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand-name { font-weight: 700; font-size: 14px; letter-spacing: 0.04em; }
+  .brand-sub { font-size: 9px; color: var(--ink-3); letter-spacing: 0.26em; font-weight: 600; text-transform: uppercase; }
+  .top-spacer { flex: 1; }
+  .top-stat {
+    display: flex; flex-direction: column;
+    padding: 0 14px;
+    border-left: 1px solid var(--hairline);
+    height: 56px;
+    justify-content: center;
+  }
+  .ts-l { font-size: 8px; color: var(--ink-3); letter-spacing: 0.22em; font-weight: 700; text-transform: uppercase; }
+  .ts-v { font: 700 13px 'IBM Plex Mono', monospace; color: var(--ink-0); margin-top: 2px; letter-spacing: 0.04em; }
+  .ts-v.green { color: var(--green); }
+  .ts-v.amber { color: var(--amber); }
+
+  /* Warn banner */
+  .warn-banner {
+    background: var(--red-soft);
+    border-bottom: 1.5px solid var(--red);
+    color: var(--red);
+    text-align: center;
+    padding: 7px 16px;
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  /* Main grid: 3 cols */
+  .app {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 320px 1fr 340px;
+    gap: 1px;
+    background-color: var(--rule);
+    min-height: 0;
+  }
+  .pane { background: var(--paper); display: flex; flex-direction: column; overflow-y: auto; }
+
+  .section-h {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--paper-tint);
+  }
+  .section-t {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.22em;
+    color: var(--ink-0);
+    text-transform: uppercase;
+  }
+  .section-meta { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); }
+  .section-count {
+    font: 700 11px 'IBM Plex Mono', monospace;
+    color: var(--green);
+    background: var(--green-soft);
+    padding: 1px 7px;
+    border: 1px solid var(--rule);
+  }
+
+  /* ===== LEFT: test list ===== */
+  .test-list { padding: 8px 0; }
+  .test-item {
+    display: grid;
+    grid-template-columns: 30px 1fr 60px;
+    gap: 10px;
+    align-items: center;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--hairline);
+    cursor: pointer;
+    position: relative;
+  }
+  .test-item:hover { background: var(--paper-tint); }
+  .test-item.active { background: var(--blue-soft); border-left: 3px solid var(--blue); padding-left: 13px; }
+  .test-item.done { border-left: 3px solid var(--green); padding-left: 13px; }
+  .test-item.warn { border-left: 3px solid var(--amber); padding-left: 13px; }
+  .ti-no {
+    width: 26px; height: 26px;
+    border: 1.5px solid var(--ink-0);
+    background: var(--paper);
+    display: flex; align-items: center; justify-content: center;
+    font: 700 12px 'IBM Plex Mono', monospace;
+  }
+  .test-item.done .ti-no { background: var(--green); color: #fff; border-color: var(--green); }
+  .test-item.warn .ti-no { background: var(--amber); color: #fff; border-color: var(--amber); }
+  .test-item.active .ti-no { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .ti-name { font-size: 12px; font-weight: 600; color: var(--ink-0); }
+  .ti-sub { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); margin-top: 2px; }
+  .ti-time { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); text-align: right; }
+  .ti-result { font: 700 10px 'IBM Plex Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; }
+  .ti-result.ok { color: var(--green); }
+  .ti-result.warn { color: var(--amber); }
+  .ti-result.bad { color: var(--red); }
+
+  .summary {
+    margin: 12px 16px;
+    padding: 12px 14px;
+    background: var(--paper-tint);
+    border: 1px solid var(--rule);
+  }
+  .summ-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .summ-l { font: 700 9px 'IBM Plex Sans', sans-serif; letter-spacing: 0.2em; color: var(--ink-3); text-transform: uppercase; }
+  .summ-v { font: 700 16px 'IBM Plex Mono', monospace; color: var(--ink-0); }
+  .summ-bar { height: 6px; background: var(--hairline); border: 1px solid var(--rule); margin-top: 6px; position: relative; overflow: hidden; }
+  .summ-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--green); }
+  .summ-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; font-size: 11px; }
+  .ss-cell { text-align: center; }
+  .ss-l { font-size: 8px; color: var(--ink-3); letter-spacing: 0.18em; font-weight: 700; text-transform: uppercase; }
+  .ss-v { font: 700 13px 'IBM Plex Mono', monospace; color: var(--ink-0); margin-top: 2px; }
+  .ss-v.green { color: var(--green); }
+  .ss-v.amber { color: var(--amber); }
+
+  /* ===== CENTER: test detail ===== */
+  .detail { padding: 24px 28px; max-width: 920px; width: 100%; }
+  .d-head {
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1.5px solid var(--ink-0);
+    display: flex; justify-content: space-between; align-items: flex-end;
+  }
+  .d-eyebrow {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.28em;
+    color: var(--amber);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .d-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--ink-0);
+    letter-spacing: -0.01em;
+  }
+  .d-sub { color: var(--ink-2); margin-top: 6px; font-size: 13px; }
+  .d-status {
+    text-align: right;
+    font: 700 11px 'IBM Plex Mono', monospace;
+    letter-spacing: 0.14em;
+  }
+  .d-status .l { color: var(--ink-3); font-size: 9px; letter-spacing: 0.22em; }
+  .d-status .v { font-size: 22px; font-weight: 700; color: var(--amber); margin-top: 4px; letter-spacing: 0.04em; }
+
+  .panel {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .panel::before { content:''; display:block; height: 3px; background: var(--amber); }
+  .panel.blue::before { background: var(--blue); }
+  .panel.green::before { background: var(--green); }
+  .p-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .p-t {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.22em;
+    color: var(--ink-0);
+    text-transform: uppercase;
+  }
+  .p-sub { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); }
+  .p-body { padding: 16px; }
+
+  /* Procedure list */
+  .proc {
+    counter-reset: stepnum;
+    margin: 0;
+  }
+  .proc-step {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--hairline);
+    font-size: 12px;
+  }
+  .proc-step:last-child { border-bottom: 0; }
+  .ps-no {
+    width: 22px; height: 22px;
+    border: 1px solid var(--ink-3);
+    color: var(--ink-3);
+    background: var(--paper);
+    display: flex; align-items: center; justify-content: center;
+    font: 700 10px 'IBM Plex Mono', monospace;
+  }
+  .proc-step.done .ps-no { background: var(--green); color: #fff; border-color: var(--green); }
+  .proc-step.active .ps-no { background: var(--amber); color: #fff; border-color: var(--amber); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 3px rgba(180,83,9,0.18); } }
+  .ps-text { color: var(--ink-1); }
+  .ps-text .kbd {
+    display: inline-block;
+    padding: 0 6px;
+    border: 1px solid var(--rule);
+    background: var(--paper-tint);
+    font: 700 10px 'IBM Plex Mono', monospace;
+    margin: 0 1px;
+  }
+
+  /* Motor test panel */
+  .motor-test { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+  .mt-box {
+    background: var(--paper-tint);
+    border: 1px solid var(--rule);
+    padding: 14px;
+    text-align: center;
+  }
+  .mt-id { font: 700 11px 'IBM Plex Mono', monospace; color: var(--ink-3); letter-spacing: 0.18em; }
+  .mt-status {
+    display: inline-block;
+    padding: 3px 9px;
+    margin: 6px 0;
+    font: 700 9px 'IBM Plex Mono', monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+  }
+  .mt-status.ok { color: var(--green); background: var(--green-soft); }
+  .mt-status.warn { color: var(--amber); background: var(--amber-soft); }
+  .mt-status.pending { color: var(--ink-3); background: var(--paper); }
+  .mt-svg { width: 50px; height: 50px; margin: 4px auto; display: block; }
+  .mt-rpm { font: 700 13px 'IBM Plex Mono', monospace; color: var(--ink-0); }
+  .mt-detail { font: 600 9px 'IBM Plex Mono', monospace; color: var(--ink-3); margin-top: 4px; }
+
+  .test-buttons {
+    display: flex; gap: 10px;
+    padding: 14px;
+    background: var(--paper-tint);
+    border-top: 1px solid var(--hairline);
+    align-items: center;
+  }
+  .btn {
+    padding: 9px 18px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-0);
+    font: 700 11px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.16em;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .btn:hover:not(:disabled) { background: var(--paper-tint); border-color: var(--ink-0); }
+  .btn-primary { background: var(--ink-0); color: var(--paper); border-color: var(--ink-0); }
+  .btn-primary:hover:not(:disabled) { background: var(--amber); border-color: var(--amber); }
+  .btn-danger { color: var(--red); border-color: var(--red); }
+  .btn-danger:hover:not(:disabled) { background: var(--red-soft); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .progress {
+    flex: 1;
+    height: 6px;
+    background: var(--hairline);
+    border: 1px solid var(--rule);
+    position: relative;
+    overflow: hidden;
+  }
+  .progress .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--amber); }
+  .progress-meta { font: 700 10px 'IBM Plex Mono', monospace; color: var(--ink-3); min-width: 80px; text-align: right; }
+
+  /* Throttle slider mock */
+  .throttle-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 60px;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 0;
+  }
+  .tr-l { font: 700 10px 'IBM Plex Sans', sans-serif; letter-spacing: 0.16em; color: var(--ink-3); text-transform: uppercase; }
+  .tr-v { font: 700 13px 'IBM Plex Mono', monospace; color: var(--ink-0); text-align: right; }
+  .slider {
+    height: 4px;
+    background: var(--hairline);
+    border: 1px solid var(--rule);
+    position: relative;
+  }
+  .slider .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--amber); }
+  .slider .thumb {
+    position: absolute;
+    width: 14px; height: 14px;
+    background: var(--ink-0);
+    border: 2px solid var(--paper);
+    top: -7px;
+    transform: translateX(-50%);
+  }
+
+  /* IMU graph */
+  .imu-graph {
+    background: #fafaf6;
+    border: 1px solid var(--rule);
+    height: 140px;
+    position: relative;
+  }
+  .imu-svg { width: 100%; height: 100%; display: block; }
+
+  /* ===== RIGHT: live telemetry strip ===== */
+  .live-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .live-table { width: 100%; border-collapse: collapse; border: 1px solid var(--rule); }
+  .live-table td { padding: 7px 10px; border-bottom: 1px solid var(--hairline); font-size: 11px; }
+  .live-table tr:last-child td { border-bottom: 0; }
+  .live-table td.l { color: var(--ink-3); font: 700 9px 'IBM Plex Sans', sans-serif; letter-spacing: 0.14em; text-transform: uppercase; }
+  .live-table td.v { color: var(--ink-0); font: 700 12px 'IBM Plex Mono', monospace; text-align: right; }
+  .live-table td.v.green { color: var(--green); }
+  .live-table td.v.amber { color: var(--amber); }
+
+  .safety-card {
+    background: var(--red-soft);
+    border: 1.5px solid var(--red);
+    padding: 12px 14px;
+  }
+  .safety-card .sc-t {
+    font: 700 10px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.22em;
+    color: var(--red);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .safety-card p {
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--ink-1);
+    margin-bottom: 6px;
+  }
+  .safety-card .kill {
+    margin-top: 8px;
+    display: block; width: 100%;
+    padding: 12px;
+    background: var(--red);
+    color: #fff;
+    border: 0;
+    font: 800 12px 'IBM Plex Sans', sans-serif;
+    letter-spacing: 0.24em;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .safety-card .kill:hover { background: #991b1b; }
+
+  /* Sensor live grid */
+  .sensor-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .sensor-card {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    padding: 7px 10px;
+    position: relative;
+  }
+  .sensor-card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--green);
+  }
+  .sensor-card.warn::before { background: var(--amber); }
+  .sensor-card.bad::before { background: var(--red); }
+  .sc-l { font-size: 8px; color: var(--ink-3); letter-spacing: 0.18em; font-weight: 700; text-transform: uppercase; }
+  .sc-v { font: 700 12px 'IBM Plex Mono', monospace; color: var(--ink-0); margin-top: 1px; }
+
+  /* Recent log */
+  .events {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .ev {
+    display: grid;
+    grid-template-columns: 50px 1fr;
+    gap: 8px;
+    padding: 5px 12px;
+    border-bottom: 1px dashed var(--hairline);
+    font-size: 11px;
+  }
+  .ev:last-child { border-bottom: 0; }
+  .ev .ts { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); }
+  .ev .msg { color: var(--ink-1); }
+  .ev.ok .msg { color: var(--green); }
+  .ev.warn { background: var(--amber-soft); }
+  .ev.warn .msg { color: var(--amber); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a href="#" class="back-link">← Setup</a>
+  <div class="brand">
+    <div class="brand-glyph">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="3" fill="currentColor"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">Pre-flight testing</div>
+      <div class="brand-sub">x500_main · bench validation</div>
+    </div>
+  </div>
+  <div class="top-spacer"></div>
+  <div class="top-stat"><div class="ts-l">Heartbeat</div><div class="ts-v green">1.0 Hz</div></div>
+  <div class="top-stat"><div class="ts-l">GPS</div><div class="ts-v green">RTK · 24 SV</div></div>
+  <div class="top-stat"><div class="ts-l">Battery</div><div class="ts-v green">92%</div></div>
+  <div class="top-stat"><div class="ts-l">Mode</div><div class="ts-v amber">HOLD · disarmed</div></div>
+</header>
+
+<div class="warn-banner mono">⚠ Hardware enabled · keep props removed for static tests · clear the area before any spin</div>
+
+<main class="app">
+
+  <!-- ===== LEFT: test list ===== -->
+  <aside class="pane">
+    <div class="section-h">
+      <span class="section-t">Validation sequence</span>
+      <span class="section-count">8</span>
+    </div>
+    <div class="test-list">
+
+      <div class="test-item done">
+        <span class="ti-no">✓</span>
+        <div>
+          <div class="ti-name">Sensor self-test</div>
+          <div class="ti-sub">IMU · mag · baro · pitot</div>
+        </div>
+        <div class="ti-result ok">pass</div>
+      </div>
+
+      <div class="test-item done">
+        <span class="ti-no">✓</span>
+        <div>
+          <div class="ti-name">GPS lock</div>
+          <div class="ti-sub">RTK · 24 SV · HDOP 0.6</div>
+        </div>
+        <div class="ti-result ok">pass</div>
+      </div>
+
+      <div class="test-item done">
+        <span class="ti-no">✓</span>
+        <div>
+          <div class="ti-name">Battery / power</div>
+          <div class="ti-sub">6S · ∆ 12 mV · 92%</div>
+        </div>
+        <div class="ti-result ok">pass</div>
+      </div>
+
+      <div class="test-item done">
+        <span class="ti-no">✓</span>
+        <div>
+          <div class="ti-name">RC link & failsafe</div>
+          <div class="ti-sub">868 MHz · HOLD</div>
+        </div>
+        <div class="ti-result ok">pass</div>
+      </div>
+
+      <div class="test-item active">
+        <span class="ti-no">5</span>
+        <div>
+          <div class="ti-name">Motor spin test</div>
+          <div class="ti-sub">in progress · M3 next</div>
+        </div>
+        <div class="ti-result">2/4</div>
+      </div>
+
+      <div class="test-item">
+        <span class="ti-no">6</span>
+        <div>
+          <div class="ti-name">Compass calibration</div>
+          <div class="ti-sub">6-axis rotation</div>
+        </div>
+        <div class="ti-result">—</div>
+      </div>
+
+      <div class="test-item">
+        <span class="ti-no">7</span>
+        <div>
+          <div class="ti-name">Tilt response</div>
+          <div class="ti-sub">attitude commands · disarmed</div>
+        </div>
+        <div class="ti-result">—</div>
+      </div>
+
+      <div class="test-item">
+        <span class="ti-no">8</span>
+        <div>
+          <div class="ti-name">Hover test</div>
+          <div class="ti-sub">1 m · 30 s · outdoor</div>
+        </div>
+        <div class="ti-result">—</div>
+      </div>
+
+    </div>
+
+    <div class="summary">
+      <div class="summ-h">
+        <span class="summ-l">Overall progress</span>
+        <span class="summ-v">50%</span>
+      </div>
+      <div class="summ-bar"><div class="summ-fill" style="width:50%"></div></div>
+      <div class="summ-stats">
+        <div class="ss-cell"><div class="ss-l">Passed</div><div class="ss-v green">4</div></div>
+        <div class="ss-cell"><div class="ss-l">Warnings</div><div class="ss-v">0</div></div>
+        <div class="ss-cell"><div class="ss-l">Pending</div><div class="ss-v amber">4</div></div>
+      </div>
+    </div>
+
+    <div style="padding:0 16px 16px">
+      <button class="btn btn-primary" style="width:100%">▶ Continue sequence</button>
+      <button class="btn" style="width:100%;margin-top:6px">Pause</button>
+      <button class="btn btn-danger" style="width:100%;margin-top:6px">Abort & disarm</button>
+    </div>
+
+  </aside>
+
+  <!-- ===== CENTER: detail ===== -->
+  <section class="pane">
+    <div class="detail">
+
+      <div class="d-head">
+        <div>
+          <div class="d-eyebrow">Step 5 of 8 · Motor spin</div>
+          <div class="d-title">Motor spin test · individual ESCs</div>
+          <div class="d-sub">Disarmed throttle ramp on each motor in turn. Verify direction, RPM linearity, current draw, and ESC temperature.</div>
+        </div>
+        <div class="d-status">
+          <div class="l">Elapsed</div>
+          <div class="v">00:24</div>
+        </div>
+      </div>
+
+      <!-- Procedure -->
+      <div class="panel">
+        <div class="p-head"><span class="p-t">§5.1 · Procedure</span><span class="p-sub">remove props · clear the area</span></div>
+        <div class="p-body">
+          <div class="proc">
+            <div class="proc-step done">
+              <span class="ps-no">✓</span>
+              <span class="ps-text"><b>M1</b> ramped 0 → 30% over 4 s. Direction CW confirmed. Current draw nominal.</span>
+            </div>
+            <div class="proc-step done">
+              <span class="ps-no">✓</span>
+              <span class="ps-text"><b>M2</b> ramped 0 → 30% over 4 s. Direction CCW confirmed. <span style="color:var(--amber)">ESC #2 reached 58°C — flagged for review.</span></span>
+            </div>
+            <div class="proc-step active">
+              <span class="ps-no">●</span>
+              <span class="ps-text"><b>M3</b> ramp in progress · 0 → 30% over 4 s. Hold <span class="kbd">SPACE</span> to abort.</span>
+            </div>
+            <div class="proc-step">
+              <span class="ps-no">4</span>
+              <span class="ps-text"><b>M4</b> ramp · same envelope. After all four pass, the airframe records the spin trace.</span>
+            </div>
+            <div class="proc-step">
+              <span class="ps-no">5</span>
+              <span class="ps-text">Cross-test: <b>all four</b> at low throttle simultaneously. CG should not shift more than 1 cm.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Motor status -->
+      <div class="panel blue">
+        <div class="p-head"><span class="p-t">§5.2 · Live motor readout</span><span class="p-sub">ESC telemetry · 50 Hz</span></div>
+        <div class="p-body">
+          <div class="motor-test">
+            <div class="mt-box">
+              <div class="mt-id">M1</div>
+              <svg class="mt-svg" viewBox="0 0 50 50">
+                <circle cx="25" cy="25" r="20" fill="none" stroke="#e6e9ee" stroke-width="3"/>
+                <circle cx="25" cy="25" r="20" fill="none" stroke="#166534" stroke-width="3" stroke-dasharray="100 126" transform="rotate(-90 25 25)"/>
+                <text x="25" y="29" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" font-weight="700" fill="#166534">30%</text>
+              </svg>
+              <div class="mt-rpm">2 084 RPM</div>
+              <div class="mt-detail">CW · 41°C · 7.1 A</div>
+              <div class="mt-status ok">Pass</div>
+            </div>
+            <div class="mt-box">
+              <div class="mt-id">M2</div>
+              <svg class="mt-svg" viewBox="0 0 50 50">
+                <circle cx="25" cy="25" r="20" fill="none" stroke="#e6e9ee" stroke-width="3"/>
+                <circle cx="25" cy="25" r="20" fill="none" stroke="#b45309" stroke-width="3" stroke-dasharray="100 126" transform="rotate(-90 25 25)"/>
+                <text x="25" y="29" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" font-weight="700" fill="#b45309">30%</text>
+              </svg>
+              <div class="mt-rpm">2 102 RPM</div>
+              <div class="mt-detail">CCW · 58°C ⚠</div>
+              <div class="mt-status warn">Review</div>
+            </div>
+            <div class="mt-box" style="background:var(--amber-soft);border-color:var(--amber)">
+              <div class="mt-id" style="color:var(--amber)">M3 ● ACTIVE</div>
+              <svg class="mt-svg" viewBox="0 0 50 50">
+                <circle cx="25" cy="25" r="20" fill="none" stroke="#e6e9ee" stroke-width="3"/>
+                <circle cx="25" cy="25" r="20" fill="none" stroke="#b45309" stroke-width="3" stroke-dasharray="56 126" transform="rotate(-90 25 25)"/>
+                <text x="25" y="29" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" font-weight="700" fill="#b45309">17%</text>
+              </svg>
+              <div class="mt-rpm">1 186 RPM</div>
+              <div class="mt-detail">CCW · 38°C · 4.2 A</div>
+              <div class="mt-status warn">2.4 s …</div>
+            </div>
+            <div class="mt-box">
+              <div class="mt-id">M4</div>
+              <svg class="mt-svg" viewBox="0 0 50 50">
+                <circle cx="25" cy="25" r="20" fill="none" stroke="#e6e9ee" stroke-width="3"/>
+              </svg>
+              <div class="mt-rpm">0 RPM</div>
+              <div class="mt-detail">CW · 22°C · 0.0 A</div>
+              <div class="mt-status pending">Pending</div>
+            </div>
+          </div>
+
+          <!-- Throttle slider mock -->
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--hairline)">
+            <div class="throttle-row">
+              <span class="tr-l">Throttle</span>
+              <div class="slider">
+                <div class="fill" style="width:17%"></div>
+                <div class="thumb" style="left:17%"></div>
+              </div>
+              <span class="tr-v">17 %</span>
+            </div>
+            <div class="throttle-row">
+              <span class="tr-l">Ramp time</span>
+              <div class="slider">
+                <div class="fill" style="width:40%"></div>
+                <div class="thumb" style="left:40%"></div>
+              </div>
+              <span class="tr-v">4.0 s</span>
+            </div>
+            <div class="throttle-row">
+              <span class="tr-l">Target max</span>
+              <div class="slider">
+                <div class="fill" style="width:30%"></div>
+                <div class="thumb" style="left:30%"></div>
+              </div>
+              <span class="tr-v">30 %</span>
+            </div>
+          </div>
+        </div>
+        <div class="test-buttons">
+          <button class="btn">⏸ Pause</button>
+          <button class="btn btn-danger">▼ Cut throttle</button>
+          <div class="progress"><div class="fill" style="width:62%"></div></div>
+          <span class="progress-meta">M3 · 2.4 s left</span>
+        </div>
+      </div>
+
+      <!-- IMU/Vibration graph -->
+      <div class="panel green">
+        <div class="p-head"><span class="p-t">§5.3 · Vibration / IMU response</span><span class="p-sub">accel (m/s²) · last 8 s</span></div>
+        <div class="p-body">
+          <div class="imu-graph">
+            <svg class="imu-svg" viewBox="0 0 600 140" preserveAspectRatio="none">
+              <defs>
+                <pattern id="ig" width="60" height="20" patternUnits="userSpaceOnUse">
+                  <path d="M 60 0 L 0 0 0 20" fill="none" stroke="#e6e9ee" stroke-width="0.5"/>
+                </pattern>
+              </defs>
+              <rect width="600" height="140" fill="url(#ig)"/>
+              <line x1="0" y1="70" x2="600" y2="70" stroke="#aab2bd" stroke-width="0.5"/>
+              <!-- X axis: smooth before M3 spin starts -->
+              <polyline fill="none" stroke="#1d4ed8" stroke-width="1.5" points="0,70 30,70 60,69 90,70 120,71 150,70 180,72 210,68 240,71 270,70 300,68 330,72 360,66 390,74 420,62 450,80 480,55 510,90 540,48 570,95 600,60"/>
+              <!-- Y axis -->
+              <polyline fill="none" stroke="#166534" stroke-width="1.5" points="0,75 30,74 60,76 90,75 120,73 150,76 180,74 210,77 240,75 270,76 300,72 330,80 360,68 390,85 420,60 450,90 480,55 510,95 540,50 570,98 600,62"/>
+              <!-- Z axis (gravity baseline shifted) -->
+              <polyline fill="none" stroke="#b45309" stroke-width="1.5" points="0,30 30,30 60,29 90,30 120,31 150,30 180,30 210,32 240,30 270,31 300,28 330,33 360,26 390,35 420,22 450,38 480,18 510,42 540,15 570,45 600,20"/>
+              <!-- M3 start marker -->
+              <line x1="420" y1="0" x2="420" y2="140" stroke="#b45309" stroke-width="1" stroke-dasharray="3 2"/>
+              <text x="424" y="14" font-family="IBM Plex Mono" font-size="9" fill="#b45309" font-weight="700">M3 spin start</text>
+            </svg>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;border:1px solid var(--hairline)">
+            <div style="padding:7px 10px;border-right:1px solid var(--hairline)">
+              <div class="ss-l">Accel X RMS</div>
+              <div class="ss-v">0.42 m/s²</div>
+            </div>
+            <div style="padding:7px 10px;border-right:1px solid var(--hairline)">
+              <div class="ss-l">Accel Y RMS</div>
+              <div class="ss-v">0.51 m/s²</div>
+            </div>
+            <div style="padding:7px 10px">
+              <div class="ss-l">Accel Z RMS</div>
+              <div class="ss-v amber">2.18 m/s²</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== RIGHT: live telemetry ===== -->
+  <aside class="pane">
+    <div class="section-h">
+      <span class="section-t">Live telemetry</span>
+      <span class="section-meta">2 Hz</span>
+    </div>
+    <div class="live-body">
+
+      <!-- Safety panel -->
+      <div class="safety-card">
+        <div class="sc-t">⚠ Safety state</div>
+        <p>Hardware is connected and powered. Props should be <b>removed</b> for any static motor test.</p>
+        <p style="color:var(--ink-3);font-size:10.5px">Geofence is loaded · failsafe HOLD · operator hand-controller armed.</p>
+        <button class="kill">⏻ Emergency disarm</button>
+      </div>
+
+      <!-- Live numbers -->
+      <table class="live-table">
+        <tr><td class="l">Voltage</td><td class="v green">24.21 V</td></tr>
+        <tr><td class="l">Current</td><td class="v">11.4 A</td></tr>
+        <tr><td class="l">Power draw</td><td class="v">276 W</td></tr>
+        <tr><td class="l">Battery %</td><td class="v green">92%</td></tr>
+        <tr><td class="l">Cell ∆</td><td class="v green">12 mV</td></tr>
+        <tr><td class="l">Pitch / Roll</td><td class="v">+0.1° / 0.0°</td></tr>
+        <tr><td class="l">Yaw</td><td class="v">231°</td></tr>
+        <tr><td class="l">Heading</td><td class="v">231° MAG</td></tr>
+        <tr><td class="l">Alt (rel)</td><td class="v">0.00 m</td></tr>
+        <tr><td class="l">Mode</td><td class="v amber">HOLD</td></tr>
+        <tr><td class="l">Armed</td><td class="v amber">no</td></tr>
+        <tr><td class="l">In-air</td><td class="v">no</td></tr>
+      </table>
+
+      <!-- Sensor grid -->
+      <div>
+        <div style="font:700 9px 'IBM Plex Sans',sans-serif;letter-spacing:0.22em;color:var(--ink-3);text-transform:uppercase;margin-bottom:6px">Sensor health</div>
+        <div class="sensor-grid">
+          <div class="sensor-card"><div class="sc-l">IMU primary</div><div class="sc-v">39.8°C</div></div>
+          <div class="sensor-card"><div class="sc-l">IMU spare</div><div class="sc-v">40.2°C</div></div>
+          <div class="sensor-card"><div class="sc-l">Mag</div><div class="sc-v">488 μT</div></div>
+          <div class="sensor-card"><div class="sc-l">Baro</div><div class="sc-v">948 hPa</div></div>
+          <div class="sensor-card"><div class="sc-l">GPS primary</div><div class="sc-v">RTK · 24 SV</div></div>
+          <div class="sensor-card"><div class="sc-l">GPS spare</div><div class="sc-v">3D · 16 SV</div></div>
+          <div class="sensor-card warn"><div class="sc-l">ESC #2</div><div class="sc-v" style="color:var(--amber)">58°C</div></div>
+          <div class="sensor-card"><div class="sc-l">EKF status</div><div class="sc-v">OK</div></div>
+        </div>
+      </div>
+
+      <!-- Event log -->
+      <div>
+        <div style="font:700 9px 'IBM Plex Sans',sans-serif;letter-spacing:0.22em;color:var(--ink-3);text-transform:uppercase;margin-bottom:6px">Recent events</div>
+        <div class="events">
+          <div class="ev"><span class="ts">00:24</span><span class="msg">M3 spin start · target 30% over 4 s</span></div>
+          <div class="ev warn"><span class="ts">00:18</span><span class="msg">ESC #2 reached 58°C · flagged for review</span></div>
+          <div class="ev ok"><span class="ts">00:14</span><span class="msg">M2 spin complete · pass</span></div>
+          <div class="ev ok"><span class="ts">00:06</span><span class="msg">M1 spin complete · pass</span></div>
+          <div class="ev"><span class="ts">−00:02</span><span class="msg">step 5 entered · motor spin test</span></div>
+          <div class="ev ok"><span class="ts">−01:14</span><span class="msg">step 4 passed · RC link armed</span></div>
+          <div class="ev ok"><span class="ts">−02:48</span><span class="msg">step 3 passed · battery healthy</span></div>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+</main>
+
+</body>
+</html>
