@@ -99,6 +99,27 @@ body.launcher-body { display: flex; flex-direction: column; min-height: 100vh; }
 .tc-time { font: 700 16px 'IBM Plex Mono', monospace; color: var(--ink-0); letter-spacing: 0.04em; }
 .tc-sub { font-size: 9px; color: var(--ink-3); letter-spacing: 0.24em; font-weight: 600; margin-top: 1px; }
 
+/* ===== Operator badge + logout (lobby header) ===== */
+.top-op {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 6px 0 14px;
+  border-left: 1px solid var(--hairline);
+  height: 56px;
+}
+.top-op-id { display: flex; flex-direction: column; justify-content: center; }
+.top-op-logout {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 7px 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink-1);
+  font: 700 11px 'IBM Plex Mono', monospace;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.top-op-logout:hover { border-color: var(--ink-0); color: var(--ink-0); background: var(--paper-tint); }
+
 /* ===== Page wrap ===== */
 .page {
   flex: 1;
@@ -133,17 +154,6 @@ body.launcher-body { display: flex; flex-direction: column; min-height: 100vh; }
   text-transform: uppercase;
   margin-bottom: 8px;
 }
-.hero-meta { display: flex; gap: 22px; }
-.hm-cell {
-  display: flex; flex-direction: column;
-  padding-left: 16px;
-  border-left: 1px solid var(--rule);
-}
-.hm-l { font-size: 9px; color: var(--ink-3); letter-spacing: 0.22em; font-weight: 700; text-transform: uppercase; }
-.hm-v { font: 700 18px 'IBM Plex Mono', monospace; color: var(--ink-0); margin-top: 3px; letter-spacing: 0.04em; }
-.hm-v.green { color: var(--green); }
-.hm-v small { font-size: 11px; color: var(--ink-3); font-weight: 500; margin-left: 3px; }
-
 /* ===== Cards grid ===== */
 .launcher-grid {
   display: grid;
@@ -200,6 +210,10 @@ body.launcher-body { display: flex; flex-direction: column; min-height: 100vh; }
 .launcher-card.accent-sim .card-tag { color: var(--blue); }
 .launcher-card.accent-real .card-tag { color: var(--amber); }
 .launcher-card.accent-fleet .card-tag { color: var(--green); }
+/* Drone logo per mode — окрашиваем иконку (и её рамку) в цвет режима. */
+.launcher-card.accent-sim .card-icon  { color: var(--blue);  border-color: var(--blue); }
+.launcher-card.accent-real .card-icon { color: var(--amber); border-color: var(--amber); }
+.launcher-card.accent-fleet .card-icon { color: var(--green); border-color: var(--green); }
 .card-title {
   font-size: 20px;
   font-weight: 700;
@@ -323,76 +337,6 @@ body.launcher-body { display: flex; flex-direction: column; min-height: 100vh; }
 .btn-ghost { background: var(--paper); color: var(--ink-2); border-color: var(--rule); }
 .btn-ghost:hover:not(:disabled) { border-color: var(--ink-0); color: var(--ink-0); }
 .btn-disabled, .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* ===== Bottom: activity + shortcuts ===== */
-.bottom {
-  display: grid;
-  grid-template-columns: 1fr 280px;
-  gap: 24px;
-  padding-top: 12px;
-}
-.activity, .shortcuts {
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  overflow: hidden;
-}
-.a-head {
-  display: flex; justify-content: space-between; align-items: baseline;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--paper-tint);
-}
-.a-t {
-  font: 700 10px 'IBM Plex Sans', sans-serif;
-  letter-spacing: 0.22em;
-  color: var(--ink-0);
-  text-transform: uppercase;
-}
-.a-meta { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); }
-.a-list { max-height: 132px; overflow-y: auto; }
-.a-row {
-  display: grid;
-  grid-template-columns: 64px 1fr 90px;
-  gap: 12px;
-  padding: 6px 16px;
-  border-bottom: 1px dashed var(--hairline);
-  font-size: 12px;
-  align-items: center;
-}
-.a-row:last-child { border-bottom: 0; }
-.a-ts { font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3); }
-.a-msg { color: var(--ink-1); }
-.a-tag {
-  font: 700 9px 'IBM Plex Mono', monospace;
-  letter-spacing: 0.14em;
-  color: var(--ink-0);
-  background: var(--paper-tint);
-  border: 1px solid var(--rule);
-  padding: 1px 6px;
-  text-align: center;
-}
-.a-tag.sim { color: var(--blue); border-color: var(--blue); }
-.a-tag.real { color: var(--amber); border-color: var(--amber); }
-.a-tag.fleet { color: var(--green); border-color: var(--green); }
-
-.sc-list { padding: 8px 16px 12px; }
-.sc-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 5px 0;
-  font-size: 12px;
-  border-bottom: 1px dashed var(--hairline);
-}
-.sc-row:last-child { border-bottom: 0; }
-.sc-l { color: var(--ink-1); }
-.kbd {
-  display: inline-flex;
-  padding: 2px 7px;
-  border: 1px solid var(--rule);
-  background: var(--paper-tint);
-  font: 700 10px 'IBM Plex Mono', monospace;
-  color: var(--ink-1);
-  letter-spacing: 0.04em;
-}
 
 .launcher-footer {
   font-size: 11px;

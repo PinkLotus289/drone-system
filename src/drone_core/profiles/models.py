@@ -3,7 +3,11 @@ import re
 from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
-ConnectionType = Literal["serial", "udp", "tcp"]
+# "radio" — наземное USB-радио на машине оператора, проброшенное в браузере через
+# Web Serial и реле на сервере (см. radio_relay.py). Реальный system_address для
+# MAVSDK при этом — локальный tcp://127.0.0.1:<relay_port>, его выдаёт реле, а не
+# профиль; поэтому connection_url() для radio не используется.
+ConnectionType = Literal["serial", "udp", "tcp", "radio"]
 
 # Имя профиля = slug: латиница+цифры+_-, чтобы безопасно писать в имя файла.
 NAME_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,40}$")
@@ -53,4 +57,7 @@ class DroneProfile(BaseModel):
             return f"udp://{self.net_host or ''}:{self.net_port}"
         if self.connection_type == "tcp":
             return f"tcp://{self.net_host}:{self.net_port}"
+        if self.connection_type == "radio":
+            # Адрес выдаёт radio-реле (локальный tcp), профиль его не знает.
+            raise ValueError("radio: используйте relay tcp url, не connection_url()")
         raise ValueError(f"Неизвестный connection_type: {self.connection_type}")

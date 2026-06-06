@@ -19,7 +19,7 @@
   <script src="https://cdn.jsdelivr.net/npm/cesium@1.118/Build/Cesium/Cesium.js"></script>
   <script src="/static/vendor-mgrs.min.js"></script>
 
-  <link rel="stylesheet" href="/static/style.css?v=27" />
+  <link rel="stylesheet" href="/static/style.css?v=32" />
 </head>
 <body>
 
@@ -28,15 +28,18 @@
   <div class="dh-brand">
     <div class="dh-brand-row">
       <div class="dh-glyph">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-          <circle cx="12" cy="12" r="9"/>
-          <path d="M12 3v18M3 12h18"/>
-          <circle cx="12" cy="12" r="3" fill="currentColor"/>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="5" cy="5" r="2.5"/>
+          <circle cx="19" cy="5" r="2.5"/>
+          <circle cx="5" cy="19" r="2.5"/>
+          <circle cx="19" cy="19" r="2.5"/>
+          <path d="M6.8 6.8 10 10M17.2 6.8 14 10M6.8 17.2 10 14M17.2 17.2 14 14"/>
+          <rect x="9.5" y="9.5" width="5" height="5" rx="1"/>
         </svg>
       </div>
       <div>
         <div class="dh-brand-name">SKYBITE</div>
-        <div class="dh-brand-sub">Flight Control · v3.4</div>
+        <div class="dh-brand-sub">Flight Control</div>
       </div>
     </div>
     <div class="dh-doc-no">
@@ -167,6 +170,15 @@
   </button>
 
   <div class="dh-actions-spacer"></div>
+
+  <!-- Control authority (арбитраж) + оператор -->
+  <button id="btn-control" class="dh-group-btn dh-group-solo ctl-free" title="Control authority — only one operator commands at a time">
+    <span id="btn-control-dot" class="ctl-dot"></span>
+    <span id="btn-control-label">TAKE CONTROL</span>
+  </button>
+  <div class="dh-op-badge mono" title="Signed-in operator">
+    <span id="dh-op-name">—</span>
+  </div>
 
   <!-- Back to lobby — НЕ останавливает симуляцию, просто возвращает в лобби -->
   <button id="btn-back-lobby" class="dh-group-btn dh-group-solo"
@@ -427,7 +439,7 @@
       </svg>
     </button>
 
-    <div class="map-frame-foot">PROJ. WGS-84 · LIVE TELEMETRY</div>
+    <div class="map-frame-foot">LIVE</div>
 
     <div class="pick-banner hidden" id="pick-banner">
       Click on map to set <b id="pick-mode-label">PICKUP</b> · <span class="kbd">ESC</span> to cancel
@@ -738,6 +750,6 @@
   </div>
 </footer>
 
-<script src="/static/app.js?v=25"></script>
+<script src="/static/app.js?v=30"></script>
 </body>
 </html>

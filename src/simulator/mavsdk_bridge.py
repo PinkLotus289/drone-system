@@ -367,9 +367,19 @@ async def handle_command(msg, sys: System, name: str, bus: MqttBus, state_ctx: d
             log.info(f"[{name}] ✈️ Взлёт")
 
         elif cmd == "goto":
-            lat, lon, alt = payload["lat"], payload["lon"], payload["alt"]
-            await sys.action.goto_location(lat, lon, alt, 0)
-            log.info(f"[{name}] 🧭 GOTO → ({lat}, {lon}, {alt})")
+            lat = float(payload["lat"])
+            lon = float(payload["lon"])
+            rel_alt = float(payload["alt"])
+            # alt в команде — ОТНОСИТЕЛЬНАЯ (м над землёй). goto_location требует
+            # AMSL, поэтому конвертируем через ground = alt_abs - alt_rel. Без этого
+            # дрон уходил «на 30м AMSL» (ниже земли) и садился (баг ручного GOTO).
+            if telem_state is not None and float(telem_state.get("alt_abs", 0)):
+                ground_amsl = float(telem_state["alt_abs"]) - float(telem_state["alt_rel"])
+                abs_alt = ground_amsl + rel_alt
+            else:
+                abs_alt = rel_alt
+            await sys.action.goto_location(lat, lon, abs_alt, float("nan"))
+            log.info(f"[{name}] 🧭 GOTO → ({lat:.6f}, {lon:.6f}, rel={rel_alt:.0f}m abs={abs_alt:.0f}m)")
 
         elif cmd == "land":
             mission_id = str(payload.get("mission_id") or state_ctx.get("mission_id") or "unknown")
@@ -677,6 +687,7 @@ async def run_for_drone(
     home_lon: float,
     home_alt: float,
     grpc_port: int = 50051,
+    is_sim: bool = True,
 ):
     name = f"veh_{instance_id}"
     settings = Settings()
@@ -688,13 +699,26 @@ async def run_for_drone(
 
     sys = await connect_system(connection_url, grpc_port=grpc_port)
 
-    # Конфигурация PX4 SITL для автономного полёта без RC
-    await setup_sitl_params(sys, f"[{name}]")
+    if is_sim:
+        # Конфигурация PX4 SITL для автономного полёта без RC.
+        await setup_sitl_params(sys, f"[{name}]")
+    else:
+        # РЕАЛЬНЫЙ борт: НЕ трогаем параметры PX4 (там отключение failsafe смертельно).
+        # Конфигурация failsafe/arming/гео — на стороне самого борта (QGC/оператор).
+        log.info(f"[{name}] 🛩️ REAL drone bridge — SITL-параметры НЕ применяются (failsafe борта сохранены)")
 
-    # ждём GPS
-    async for h in sys.telemetry.health():
-        if h.is_global_position_ok and h.is_home_position_ok:
-            break
+    # Ждём GPS-фикс, но с таймаутом: реальный борт может подключиться без фикса
+    # (в помещении / холодный старт) — тогда всё равно объявляем его во флоте,
+    # а позиция/здоровье дотянутся телеметрией позже. SITL фикс получает быстро.
+    async def _wait_gps():
+        async for h in sys.telemetry.health():
+            if h.is_global_position_ok and h.is_home_position_ok:
+                return True
+        return False
+    try:
+        await asyncio.wait_for(_wait_gps(), timeout=(20.0 if is_sim else 12.0))
+    except asyncio.TimeoutError:
+        log.warning(f"[{name}] ⏱️ нет GPS-фикса за таймаут — объявляю борт без позиции")
 
     # первая публикация
     bus.publish("fleet/active", {
@@ -1022,7 +1046,41 @@ async def run_for_drone(
 # =====================================================
 #  Главная точка входа
 # =====================================================
+async def _run_real_bridge():
+    """Запуск моста для РЕАЛЬНОГО борта по env (см. real_supervisor):
+      REAL_BRIDGE=1, REAL_DRONE_ID, REAL_CONN_URL, REAL_GRPC_PORT,
+      опц. REAL_HOME_LAT / REAL_HOME_LON.
+    SITL-параметры НЕ применяются (is_sim=False)."""
+    drone_id = os.environ["REAL_DRONE_ID"]
+    conn_url = os.environ["REAL_CONN_URL"]
+    grpc_port = int(os.environ.get("REAL_GRPC_PORT", "50191"))
+    home_lat = float(os.environ.get("REAL_HOME_LAT", "0") or 0)
+    home_lon = float(os.environ.get("REAL_HOME_LON", "0") or 0)
+    log.info(f"🛩️ REAL bridge: id={drone_id} url={conn_url} gRPC:{grpc_port}")
+
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for _sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(_sig, stop_event.set)
+        except (NotImplementedError, RuntimeError):
+            pass
+    task = asyncio.create_task(
+        run_for_drone(drone_id, conn_url, home_lat, home_lon, 0.0, grpc_port, is_sim=False)
+    )
+    stop_task = asyncio.create_task(stop_event.wait())
+    done, pending = await asyncio.wait([stop_task, task], return_when=asyncio.FIRST_COMPLETED)
+    for t in pending:
+        t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 async def main_async():
+    # Реальный борт — отдельная точка входа по env.
+    if os.environ.get("REAL_BRIDGE"):
+        await _run_real_bridge()
+        return
+
     cfg_path = Path(__file__).resolve().parent / "config.yaml"
     cfg = yaml.safe_load(cfg_path.read_text())
 

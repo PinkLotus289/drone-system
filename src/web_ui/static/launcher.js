@@ -33,6 +33,14 @@
       stopBtn.classList.add("hidden");
     }
     if (state === "error") setMsg(errorText || "Simulation error", "err");
+
+    // Пока симуляция поднята/поднимается — прячем выбор кол-ва дронов и
+    // оценку памяти (они актуальны только до старта).
+    const live = (state === "running" || state === "starting");
+    const cfg = $("sim-config");
+    const aux = document.querySelector("#status-sim .status-aux");
+    if (cfg) cfg.classList.toggle("hidden", live);
+    if (aux) aux.classList.toggle("hidden", live);
   }
 
   async function refreshStatus() {
@@ -133,20 +141,67 @@
     setMsg("Fleet operations · in development · target 0.6.0", "warn");
   });
 
-  // ─── Часы и uptime в шапке ──────────────────────────────────────
-  const pageOpenedAt = Date.now();
+  // ─── Часы, session-аптайм и индикатор System в шапке ────────────
   function pad(n) { return String(n).padStart(2, "0"); }
+  // Аптайм = время с момента входа под профилем (iat из сессионного токена).
+  // После logout/выброса оператор логинится заново → новый iat → счётчик с нуля.
+  let loginAt = null;            // ms, момент входа в систему
+  function fmtUptime(s) {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+  }
   function tickClock() {
     const d = new Date();
     const el = $("clock-time");
     if (el) el.textContent = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
     const up = $("hero-uptime");
-    if (up) {
-      const s = Math.floor((Date.now() - pageOpenedAt) / 1000);
-      up.textContent = `${pad(Math.floor(s/60))}:${pad(s%60)}`;
+    if (up && loginAt !== null) {
+      const s = Math.max(0, Math.floor((Date.now() - loginAt) / 1000));
+      up.textContent = fmtUptime(s);
     }
   }
   setInterval(tickClock, 1000); tickClock();
+
+  // ─── Оператор + момент входа (для session-аптайма) ──────────────
+  async function refreshMe() {
+    try {
+      const r = await fetch("/api/me", { cache: "no-store" });
+      if (!r.ok) throw new Error("unauthorized");
+      const j = await r.json();
+      const op = $("lobby-op");
+      if (op) op.textContent = j.operator || "—";
+      if (typeof j.iat === "number") { loginAt = j.iat * 1000; tickClock(); }
+    } catch (e) { /* не залогинен — middleware и так редиректнет */ }
+  }
+  refreshMe();
+
+  // Logout / смена профиля: гасим сессию и уходим на экран входа.
+  const logoutBtn = $("btn-lobby-logout");
+  if (logoutBtn) logoutBtn.addEventListener("click", async () => {
+    logoutBtn.disabled = true;
+    try { await fetch("/api/logout", { method: "POST" }); } catch (e) { /* ignore */ }
+    window.location.href = "/login";
+  });
+
+  // ─── Health: реальный признак «система жива» ────────────────────
+  function setHealth(ok) {
+    const el = $("ts-health");
+    if (!el) return;
+    el.textContent = ok ? "Healthy" : "Offline";
+    el.className = "ts-v " + (ok ? "green" : "amber");
+  }
+  async function refreshHealth() {
+    try {
+      const r = await fetch("/api/launcher/health", { cache: "no-store" });
+      if (!r.ok) throw new Error("bad status");
+      await r.json();
+      setHealth(true);
+    } catch (e) {
+      setHealth(false);
+    }
+  }
+  refreshHealth();
+  setInterval(refreshHealth, 5000);
 
   // ─── Профили реальных дронов в стат-ячейках + карточке Real ────
   async function refreshProfiles() {
@@ -177,24 +232,6 @@
     } catch (e) { /* silent */ }
   }
   refreshProfiles();
-
-  // ─── Recent activity (статика + локальный лог) ──────────────────
-  function logActivity(msg, tag) {
-    const list = $("activity-list");
-    if (!list) return;
-    const ts = (() => {
-      const d = new Date();
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    })();
-    const row = document.createElement("div");
-    row.className = "a-row";
-    const tagClass = tag && ["sim","real","fleet"].includes(tag.toLowerCase()) ? tag.toLowerCase() : "";
-    row.innerHTML = `<span class="a-ts mono">${ts}</span><span class="a-msg">${msg}</span><span class="a-tag ${tagClass}">${(tag || "UI").toUpperCase()}</span>`;
-    list.insertBefore(row, list.firstChild);
-    while (list.children.length > 8) list.removeChild(list.lastChild);
-  }
-  // первая запись + статус сим заменит при изменении (см. setSimStatus)
-  logActivity("Launch page opened.", "UI");
 
   // ─── Пуллинг статуса каждые 3 с ────────────────────────────────
   refreshStatus();

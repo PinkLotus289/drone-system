@@ -3,10 +3,10 @@ import json
 import asyncio
 import yaml
 from pathlib import Path
-from typing import Any, Dict
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from typing import Any, Dict, Optional
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Response
 from starlette.datastructures import State
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from drone_core.config.settings import Settings
@@ -17,6 +17,8 @@ from drone_core.infra.messaging.mqtt_bus import MqttBus
 
 from .launcher import router as launcher_router
 from .real import router as real_router
+from . import auth as authmod
+from .control import ControlAuthority
 
 # --- пути и настройки ---
 APP_ROOT = Path(__file__).parents[1]
@@ -44,6 +46,30 @@ missions_repo = MissionsMem()
 telemetry_clients: set[WebSocket] = set()
 active_drones: dict[str, dict] = {}
 
+# Арбитраж управления: одновременно командовать может только один клиент.
+control = ControlAuthority(ttl=float(settings.CONTROL_TTL_SEC))
+
+# Отозванные сессии (logout). Stateless-токен иначе валиден до exp — это даёт
+# серверную инвалидацию по logout. В памяти процесса; при рестарте сбрасывается.
+revoked_sids: set[str] = set()
+
+# Публичные пути (без авторизации): страница входа, сам логин, статика.
+_PUBLIC_PREFIXES = ("/login", "/api/login", "/static/", "/favicon")
+
+
+@app.middleware("http")
+async def _auth_guard(request: Request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS" or any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES):
+        return await call_next(request)
+    payload = authmod.operator_from_cookies(request.cookies, settings.SESSION_SECRET)
+    if payload is None or payload.get("sid") in revoked_sids:
+        if path.startswith("/api/"):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        return RedirectResponse(url=f"/login?next={path}", status_code=302)
+    request.state.auth = payload  # {op, sid, exp}
+    return await call_next(request)
+
 
 def read_cfg() -> Dict[str, Any]:
     with open(SIM_CFG, "r", encoding="utf-8") as f:
@@ -61,7 +87,11 @@ async def _startup():
 
     # Сохраняем активных дронов + активные миссии в памяти
     app.state.active_drones = {}
-    app.state.active_missions = {}  # {mission_id: {...}}
+    app.state.active_missions = {}  # {mission_id: {...}} — активные (с авто-чисткой терминальных)
+    # Журнал ВСЕХ миссий за сессию sim'а (вкл. завершённые) — НЕ чистится по таймеру,
+    # чтобы вкладка "Session Missions" переживала перезагрузку страницы. Сбрасывается
+    # только при (пере)запуске симуляции (reset_sim_session_state).
+    app.state.session_missions = {}  # {mission_id: {...}}
     # Буфер траекторий: {drone_id: [[lon,lat,alt], ...]} — чтобы трейлы переживали
     # перезагрузку страницы (фронт восстанавливает их из снапшота при загрузке).
     app.state.drone_trails = {}
@@ -69,6 +99,7 @@ async def _startup():
 
     def _update_mission(mid: str, **fields):
         import time as _t
+        now_ms = int(_t.time() * 1000)
         m = app.state.active_missions.setdefault(mid, {
             "mission_id": mid,
             "vehicle_id": None,
@@ -79,9 +110,33 @@ async def _startup():
         })
         m.update({k: v for k, v in fields.items() if v is not None})
         m["updated"] = _t.time()
-        # Терминальную миссию (выполнена/отменена/ошибка) держим в списке ещё 20с
-        # (UI показывает её как COMPLETED/100% / failed), потом убираем — линия
-        # таймлайна исчезает. ABORTED/FAILED тоже чистим, иначе они зависают.
+
+        # Зеркалим в session-журнал (не чистится) — источник для вкладки Missions
+        # после перезагрузки страницы. first_seen фиксируем один раз.
+        sm = app.state.session_missions.setdefault(mid, {
+            "mission_id": mid,
+            "first_seen": now_ms,
+            "mission_type": "delivery",
+            "takeoff_profile": "vertical",
+            "status": "PLANNED",
+            "vehicle_id": None,
+            "progress_current": 0,
+            "progress_total": 0,
+            "notes": None,
+            "wp_count": None,
+        })
+        for k, v in fields.items():
+            if v is None:
+                continue
+            if k == "waypoints":
+                sm["wp_count"] = len(v) if isinstance(v, list) else sm.get("wp_count")
+            else:
+                sm[k] = v
+        sm["updated"] = now_ms
+
+        # Терминальную миссию (выполнена/отменена/ошибка) держим в АКТИВНОМ списке ещё
+        # 20с (UI показывает её как COMPLETED/100% / failed), потом убираем — линия
+        # таймлайна исчезает. В session-журнале она остаётся навсегда (до reset sim'а).
         _status = str(m.get("status") or "")
         _terminal = _status == "COMPLETED" or _status == "ABORTED" or "FAILED" in _status
         if _terminal:
@@ -240,6 +295,145 @@ async def _startup():
     bus.subscribe("mission/+/progress", _mqtt_handler, qos=0)
 
 
+# === Auth: вход по общему код-паролю ===
+@app.get("/login")
+async def login_page():
+    return FileResponse(str(APP_ROOT / "web_ui" / "static" / "login.html"))
+
+
+@app.post("/api/login")
+async def api_login(body: Dict[str, Any], response: Response):
+    code = str((body or {}).get("code") or "")
+    callsign = str((body or {}).get("callsign") or "").strip() or "operator"
+    import hmac as _hmac
+    if not _hmac.compare_digest(code, settings.ACCESS_CODE):
+        return JSONResponse({"ok": False, "error": "bad_code"}, status_code=401)
+    token, _sid = authmod.make_session_token(callsign, settings.SESSION_SECRET, settings.SESSION_TTL_HOURS)
+    response = JSONResponse({"ok": True, "operator": callsign})
+    response.set_cookie(
+        authmod.COOKIE_NAME, token,
+        httponly=True, samesite="lax", secure=bool(settings.COOKIE_SECURE),
+        max_age=settings.SESSION_TTL_HOURS * 3600, path="/",
+    )
+    return response
+
+
+@app.post("/api/logout")
+async def api_logout(request: Request):
+    # снять управление за этой сессией, чтобы борт не залип
+    sid = (getattr(request.state, "auth", {}) or {}).get("sid")
+    if sid:
+        revoked_sids.add(sid)  # инвалидируем токен этой сессии
+        for scope, lease in list(control.snapshot().items()):
+            if lease.get("sid") == sid:
+                control.release(scope, sid)
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(authmod.COOKIE_NAME, path="/")
+    return resp
+
+
+@app.get("/api/me")
+async def api_me(request: Request):
+    a = getattr(request.state, "auth", {}) or {}
+    return {"operator": a.get("op"), "sid": a.get("sid"), "iat": a.get("iat")}
+
+
+# === Арбитраж управления ===
+def _auth_of(request: Request) -> Dict[str, Any]:
+    return getattr(request.state, "auth", {}) or {}
+
+
+@app.get("/api/control")
+async def api_control_state(request: Request):
+    a = _auth_of(request)
+    sid = a.get("sid")
+    leases = control.snapshot()
+    out = {}
+    for scope, l in leases.items():
+        out[scope] = {"operator": l["operator"], "mine": l["sid"] == sid, "expires": l["expires"]}
+    return {"leases": out, "me": {"operator": a.get("op"), "sid": sid}}
+
+
+@app.post("/api/control/acquire")
+async def api_control_acquire(request: Request, body: Optional[Dict[str, Any]] = None):
+    a = _auth_of(request)
+    scope = str((body or {}).get("scope") or "system")
+    ok, info = control.acquire(scope, a.get("op", "operator"), a.get("sid", ""))
+    if ok:
+        return {"ok": True, "scope": scope, "lease": {"operator": info["operator"], "mine": True}}
+    return JSONResponse(
+        {"ok": False, "error": "held", "scope": scope, "holder": info["operator"]},
+        status_code=409,
+    )
+
+
+@app.post("/api/control/heartbeat")
+async def api_control_heartbeat(request: Request, body: Optional[Dict[str, Any]] = None):
+    a = _auth_of(request)
+    scope = str((body or {}).get("scope") or "system")
+    ok = control.heartbeat(scope, a.get("sid", ""))
+    return {"ok": ok, "scope": scope}
+
+
+@app.post("/api/control/release")
+async def api_control_release(request: Request, body: Optional[Dict[str, Any]] = None):
+    a = _auth_of(request)
+    scope = str((body or {}).get("scope") or "system")
+    control.release(scope, a.get("sid", ""))
+    return {"ok": True, "scope": scope}
+
+
+@app.post("/api/control/takeover")
+async def api_control_takeover(request: Request, body: Optional[Dict[str, Any]] = None):
+    a = _auth_of(request)
+    scope = str((body or {}).get("scope") or "system")
+    prev = control.takeover(scope, a.get("op", "operator"), a.get("sid", ""))
+    print(f"[CONTROL] takeover scope={scope} by={a.get('op')} prev={prev.get('operator') if prev else None}")
+    return {"ok": True, "scope": scope, "previous": (prev or {}).get("operator")}
+
+
+# === Ручное управление дроном (guided) — под арбитражем ===
+_MANUAL_ACTIONS = {"arm", "disarm", "takeoff", "land", "rtl", "goto", "hold"}
+
+
+@app.post("/api/drone/{veh_id}/command")
+async def api_drone_command(veh_id: str, body: Dict[str, Any], request: Request):
+    """Ручная команда борту. Требует держателя управления (scope "system").
+    Безопасный guided-набор: arm/takeoff/land/rtl/goto/hold (без сырого стика)."""
+    a = _auth_of(request)
+    if not control.is_holder("system", a.get("sid", "")):
+        holder = control.get("system")
+        return JSONResponse(
+            {"error": "no_control", "holder": (holder or {}).get("operator"),
+             "message": "Take control before commanding a drone."},
+            status_code=403,
+        )
+    action = str((body or {}).get("action") or "").lower()
+    if action not in _MANUAL_ACTIONS:
+        return JSONResponse({"error": "bad_action", "allowed": sorted(_MANUAL_ACTIONS)}, status_code=400)
+
+    veh = veh_id if str(veh_id).startswith("veh_") else f"veh_{veh_id}"
+    # hold = задержаться на месте: goto на текущую позицию борта (если известна)
+    if action == "hold":
+        d = app.state.active_drones.get(veh) or app.state.active_drones.get(veh_id) or {}
+        payload = {"lat": d.get("lat"), "lon": d.get("lon"), "alt": d.get("alt") or 20.0}
+        topic = f"cmd/{veh}/goto"
+    elif action == "goto":
+        try:
+            payload = {"lat": float(body["lat"]), "lon": float(body["lon"]),
+                       "alt": float(body.get("alt") or 30.0)}
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse({"error": "goto requires lat,lon,alt"}, status_code=400)
+        topic = f"cmd/{veh}/goto"
+    else:
+        topic = f"cmd/{veh}/{action}"
+        payload = {}
+
+    bus.publish(topic, payload, qos=1)
+    print(f"[MANUAL] {a.get('op')} → {topic} {payload}")
+    return {"ok": True, "veh": veh, "action": action}
+
+
 # === Маршруты API ===
 # `/` обслуживает launcher_router (страница выбора режима).
 # UI симулятора живёт на `/sim`.
@@ -339,14 +533,26 @@ async def api_settings():
 
 
 @app.post("/api/orders")
-async def api_orders(body: Dict[str, Any]):
+async def api_orders(body: Dict[str, Any], request: Request):
     """Создаёт заказ, публикует его в MQTT → orchestrator.
+
+    Требует, чтобы вызывающий держал управление (scope "system") — арбитраж не
+    даёт двум операторам диспетчеризовать одновременно.
 
     Дополнительные поля (drone_id, priority, mission_type, cruise_alt_m,
     cruise_speed_mps, takeoff_alt_m, auto_rth, notes, и расширенные
     waypoints/loop_count/orbit_radius_m/pattern/sector_*) пробрасываются
     в payload MQTT под ключом `extras` — orchestrator может их учитывать
     либо игнорировать."""
+    a = _auth_of(request)
+    if not control.is_holder("system", a.get("sid", "")):
+        holder = control.get("system")
+        return JSONResponse(
+            {"error": "no_control",
+             "holder": (holder or {}).get("operator"),
+             "message": "Take control before dispatching missions."},
+            status_code=403,
+        )
     cfg = read_cfg()
     base_cfg = cfg.get("base", {"lat": 43.07470, "lon": -89.38420})
     base = LLA(lat=float(base_cfg["lat"]), lon=float(base_cfg["lon"]), alt=60.0)
@@ -405,9 +611,14 @@ async def start_mission():
 # === WebSocket ===
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
+    # WS авторизуется той же cookie (уходит при same-origin handshake).
+    payload = authmod.operator_from_cookies(websocket.cookies, settings.SESSION_SECRET)
+    if payload is None or payload.get("sid") in revoked_sids:
+        await websocket.close(code=1008)  # policy violation
+        return
     await websocket.accept()
     telemetry_clients.add(websocket)
-    print("🌐 WebSocket клиент подключен")
+    print(f"🌐 WebSocket клиент подключен (op={payload.get('op')})")
 
     try:
         # просто держим соединение живым
@@ -446,8 +657,11 @@ async def api_active_missions():
 
 @app.get("/api/session/snapshot")
 async def api_session_snapshot():
-    """Снапшот сессии для восстановления карты после перезагрузки страницы:
-    активные миссии (с waypoints/типом/профилем взлёта) + траектории дронов.
+    """Снапшот сессии для восстановления после перезагрузки страницы:
+    - missions: активные миссии с waypoints — для перерисовки маршрутов на карте;
+    - session_missions: полный журнал миссий сессии — для вкладки Session Missions
+      (переживает reload, т.к. хранится на сервере и не чистится по таймеру);
+    - trails: траектории дронов.
     Дроны восстанавливаются отдельно через /api/fleet."""
     missions = []
     for m in app.state.active_missions.values():
@@ -460,4 +674,22 @@ async def api_session_snapshot():
             "status": m.get("status"),
             "waypoints": m.get("waypoints", []),
         })
-    return {"missions": missions, "trails": app.state.drone_trails}
+    return {
+        "missions": missions,
+        "session_missions": list(app.state.session_missions.values()),
+        "trails": app.state.drone_trails,
+    }
+
+
+def reset_sim_session_state() -> None:
+    """Полный сброс эфемерного состояния флота/миссий при (пере)запуске симуляции.
+
+    Дроны, их телеметрия, активные и session-миссии, трейлы — обнуляются, чтобы
+    новый sim-кластер не наследовал «призраков» прошлого запуска (старые борта,
+    зависшие миссии, чужие траектории). Пользовательские рисунки (KOZ/POI/маршруты)
+    живут на клиенте в localStorage и здесь НЕ затрагиваются."""
+    for attr in ("active_drones", "active_missions", "drone_trails", "session_missions"):
+        d = getattr(app.state, attr, None)
+        if isinstance(d, dict):
+            d.clear()
+    print("[UI] sim session state reset (drones/missions/trails cleared)")

@@ -79,6 +79,9 @@ const state = {
   // Множество ID завершённых миссий — считаем по уникальным id, а не инкрементом:
   // COMPLETED мог доставляться несколько раз (QoS/реконнект) и накручивал счётчик.
   completedMissions: new Set(),
+  // Арбитраж управления (scope "system"): mine — держим ли мы управление.
+  control: { mine: false, holder: null, scope: 'system' },
+  operator: null,             // позывной текущего оператора (из /api/me)
   pickingFor: null,
   wsConnected: false,
   settings: null,             // загружается из localStorage в init
@@ -313,6 +316,8 @@ async function init() {
 
   setInterval(refreshFleet, 2000);
   setInterval(refreshMissions, 1500);
+  setInterval(refreshControl, 4000);   // арбитраж: статус управления + heartbeat
+  refreshControl();
   setInterval(tickClock, 1000);
   setInterval(refreshBlackBox, 3000);          // SHA-256 над event-логом для footer
   setInterval(renderPttBar, 5000);             // PTT каналы — пересчёт когда меняется флот
@@ -696,6 +701,7 @@ function initDrawingTools() {
     if (!state.missionPicking) return;
     commitMissionPick();
   }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+
 
   // Wire popup save/cancel/close
   const popup = document.getElementById('draw-popup');
@@ -1915,6 +1921,25 @@ async function restoreSessionSnapshot() {
         drawWaypoints(m.mission_id, m.waypoints, m.mission_type, m.takeoff_profile);
       }
     });
+    // Журнал Session Missions хранится на сервере → восстанавливаем после reload,
+    // иначе вкладка MISSIONS теряет историю при каждой перезагрузке страницы.
+    (snap.session_missions || []).forEach((m) => {
+      if (!m.mission_id) return;
+      state.sessionMissions.set(m.mission_id, {
+        mission_id: m.mission_id,
+        first_seen: m.first_seen || Date.now(),
+        updated: m.updated || Date.now(),
+        mission_type: m.mission_type || 'delivery',
+        status: m.status || 'PLANNED',
+        vehicle_id: m.vehicle_id || null,
+        current: m.progress_current || 0,
+        total: m.progress_total || 0,
+        notes: m.notes || null,
+        wp_count: (m.wp_count != null ? m.wp_count : null),
+        priority: m.priority || 'normal',
+      });
+    });
+    renderMissionsLog();
     const trails = snap.trails || {};
     Object.keys(trails).forEach((id) => {
       const pts = trails[id];
@@ -1928,12 +1953,93 @@ async function restoreSessionSnapshot() {
   } catch (e) { /* ignore */ }
 }
 
+// =================================================================
+// CONTROL AUTHORITY (арбитраж) — только один оператор командует за раз
+// =================================================================
+async function refreshControl() {
+  try {
+    const res = await fetch('/api/control');
+    if (res.status === 401) { location.href = '/login'; return; }
+    const data = await res.json();
+    const lease = (data.leases || {})['system'] || null;
+    state.control.mine = !!(lease && lease.mine);
+    state.control.holder = lease ? lease.operator : null;
+    if (data.me && data.me.operator) { state.operator = data.me.operator; setText('dh-op-name', data.operator || data.me.operator); }
+    renderControlBtn();
+    // heartbeat пока держим управление — иначе аренда протухнет
+    if (state.control.mine) {
+      fetch('/api/control/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+    }
+  } catch { /* silent */ }
+}
+
+function renderControlBtn() {
+  const btn = document.getElementById('btn-control');
+  const lbl = document.getElementById('btn-control-label');
+  if (!btn || !lbl) return;
+  btn.classList.remove('ctl-free', 'ctl-mine', 'ctl-other');
+  if (state.control.mine) {
+    btn.classList.add('ctl-mine');
+    lbl.textContent = 'YOU HAVE CONTROL';
+    btn.title = 'You hold command authority — click to release';
+  } else if (state.control.holder) {
+    btn.classList.add('ctl-other');
+    lbl.textContent = `${state.control.holder} CONTROLS`;
+    btn.title = `Controlled by ${state.control.holder} — click to request takeover`;
+  } else {
+    btn.classList.add('ctl-free');
+    lbl.textContent = 'TAKE CONTROL';
+    btn.title = 'No one is in command — click to take control';
+  }
+}
+
+async function onControlClick() {
+  if (state.control.mine) {
+    await fetch('/api/control/release', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+    logEvent('sys', 'control released', '');
+  } else if (state.control.holder) {
+    if (!confirm(`Control is held by ${state.control.holder}.\nForce takeover? This will be logged.`)) return;
+    await fetch('/api/control/takeover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+    logEvent('sys', `control taken over from ${state.control.holder}`, 'success');
+  } else {
+    const r = await fetch('/api/control/acquire', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); logEvent('sys', `control held by ${j.holder || '?'}`, 'error'); }
+    else logEvent('sys', 'control acquired', 'success');
+  }
+  refreshControl();
+}
+
+// Гарантировать управление перед командой; вернуть true если можно слать.
+async function ensureControl() {
+  if (state.control.mine) return true;
+  const r = await fetch('/api/control/acquire', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  if (r.ok) { state.control.mine = true; renderControlBtn(); return true; }
+  const j = await r.json().catch(() => ({}));
+  logEvent('orch', `Cannot dispatch — control held by ${j.holder || '?'}. Take control first.`, 'error');
+  refreshControl();
+  return false;
+}
+
+async function doLogout() {
+  try { await fetch('/api/logout', { method: 'POST' }); } catch {}
+  location.href = '/login';
+}
+
 async function refreshMissions() {
   try {
     const res = await fetch('/api/active_missions');
     const data = await res.json();
     const ms = data.missions || [];
     state.missions = new Map(ms.map((m) => [m.mission_id, m]));
+    // Подпитываем session-журнал из активного списка — страховка от потерянных
+    // WS-событий (после reconnect и т.п.): данные миссий не «прыгают» и не теряются.
+    ms.forEach((m) => updateSessionMission(m.mission_id, {
+      mission_type: m.mission_type,
+      status: m.status,
+      vehicle_id: m.vehicle_id,
+      current: m.progress_current,
+      total: m.progress_total,
+    }));
     renderMissionsList();
     document.getElementById('missions-count').textContent = ms.length;
     setText('kpi-active-missions', String(ms.length));  // шапка · Active
@@ -2213,6 +2319,10 @@ function wireUI() {
   document.getElementById('modal-cancel').onclick = closeModal;
   document.getElementById('modal-submit').onclick = submitOrder;
 
+  // Control authority + logout
+  document.getElementById('btn-control')?.addEventListener('click', onControlClick);
+  document.getElementById('btn-logout')?.addEventListener('click', doLogout);
+
   // Missions log (session)
   document.getElementById('btn-missions')?.addEventListener('click', openMissionsLog);
   document.getElementById('missions-close')?.addEventListener('click', closeMissionsLog);
@@ -2349,6 +2459,8 @@ function wireUI() {
 }
 
 async function submitOrder() {
+  // Арбитраж: командовать может только держатель управления.
+  if (!(await ensureControl())) return;
   // Общие поля
   const droneId = document.getElementById('m-drone')?.value || '';
   const priority = document.querySelector('#m-priority-seg .seg-mini-btn.active')?.dataset.priority || 'normal';
@@ -2494,6 +2606,7 @@ async function submitOrder() {
 
   // Шлём все orders на /api/orders
   let success = 0;
+  let lostControl = false;
   for (const o of orders) {
     try {
       const res = await fetch('/api/orders', {
@@ -2521,20 +2634,34 @@ async function submitOrder() {
           sector_total: o.sector_total ?? null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403 && data.error === 'no_control') {
+        // Управление перехватили между ensureControl() и отправкой — сервер
+        // корректно отказал. Прекращаем рассылку и ресинхроним статус арбитража.
+        lostControl = true;
+        logEvent('orch', `dispatch refused — control held by ${data.holder || '?'}`, 'error');
+        break;
+      }
       if (data.order_id) success++;
+      else logEvent('orch', `dispatch rejected: ${data.error || 'unknown'}`, 'error');
     } catch (e) {
       logEvent('orch', `dispatch failed: ${e.message}`, 'error');
     }
   }
 
-  const tail = orders.length > 1 ? ` (${success}/${orders.length} drones)` : '';
-  logEvent('orch', `${type.toUpperCase()} dispatched · ${priority}${tail}`, 'success');
+  if (lostControl) refreshControl();
 
-  // Reset draft
-  state.missionDraft = { route: null, sector: null };
-  saveStore();
-  closeModal();
+  // Честный итог: «dispatched» только если что-то реально ушло.
+  if (success > 0) {
+    const tail = orders.length > 1 ? ` (${success}/${orders.length} drones)` : '';
+    logEvent('orch', `${type.toUpperCase()} dispatched · ${priority}${tail}`, 'success');
+    // Reset draft только при успешной отправке.
+    state.missionDraft = { route: null, sector: null };
+    saveStore();
+    closeModal();
+  } else if (!lostControl) {
+    logEvent('orch', `${type.toUpperCase()} dispatch failed — nothing sent`, 'error');
+  }
 }
 
 // =================================================================

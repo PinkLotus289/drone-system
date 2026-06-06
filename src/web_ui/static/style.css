@@ -104,12 +104,12 @@ body { display: flex; flex-direction: column; }
 .dh-brand-name {
   font-weight: 700;
   letter-spacing: 0.04em;
-  font-size: 15px;
+  font-size: 18px;
   color: var(--ink-0);
   line-height: 1.1;
 }
 .dh-brand-sub {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--ink-3);
   letter-spacing: 0.26em;
   font-weight: 600;
@@ -124,14 +124,14 @@ body { display: flex; flex-direction: column; }
 }
 .dh-dn { display: flex; flex-direction: column; }
 .dh-dn-l {
-  font-size: 8px;
+  font-size: 9px;
   color: var(--ink-3);
   letter-spacing: 0.22em;
   font-weight: 700;
   text-transform: uppercase;
 }
 .dh-dn-v {
-  font: 700 11px 'IBM Plex Mono', 'JetBrains Mono', monospace;
+  font: 700 14px 'IBM Plex Mono', 'JetBrains Mono', monospace;
   color: var(--ink-0);
   letter-spacing: 0.04em;
   margin-top: 2px;
@@ -153,16 +153,16 @@ body { display: flex; flex-direction: column; }
 }
 .dh-cell:last-child { border-right: 0; }
 .dh-l {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--ink-3);
   letter-spacing: 0.22em;
   font-weight: 700;
   text-transform: uppercase;
 }
 .dh-v {
-  font: 700 14px 'IBM Plex Mono', 'JetBrains Mono', monospace;
+  font: 700 18px 'IBM Plex Mono', 'JetBrains Mono', monospace;
   color: var(--ink-0);
-  margin-top: 3px;
+  margin-top: 4px;
   letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;
@@ -172,7 +172,7 @@ body { display: flex; flex-direction: column; }
 .dh-v.amber { color: var(--warning); }
 .dh-v.red { color: var(--error); }
 .dh-v small {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--ink-3);
   font-weight: 500;
   margin-left: 2px;
@@ -201,10 +201,10 @@ body { display: flex; flex-direction: column; }
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 11px;
 }
 .dh-rr-v {
-  font: 700 17px 'IBM Plex Mono', 'JetBrains Mono', monospace;
+  font: 700 19px 'IBM Plex Mono', 'JetBrains Mono', monospace;
   color: var(--ink-0);
   text-align: right;
   letter-spacing: 0.02em;
@@ -771,7 +771,7 @@ body { display: flex; flex-direction: column; }
   z-index: 5;
 }
 .map-wrap::after {
-  content: 'FIG. 4.1 · TACTICAL OVERLAY · LIVE';
+  content: 'MAP';
   position: absolute;
   top: 8px; left: 32px;
   background: var(--paper);
@@ -2321,6 +2321,26 @@ body.popout-schematic .schem-svg { height: calc(100vh - 80px) !important; }
   word-break: break-word;
 }
 .md-empty { color: var(--ink-3); font-style: italic; }
+
+/* =================== CONTROL AUTHORITY (арбитраж) =================== */
+.ctl-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink-3); display: inline-block; flex-shrink: 0;
+}
+#btn-control.ctl-mine { background: var(--success) !important; color: #fff !important; }
+#btn-control.ctl-mine .ctl-dot { background: #fff; }
+#btn-control.ctl-other { background: var(--amber) !important; color: #fff !important; }
+#btn-control.ctl-other .ctl-dot { background: #fff; }
+#btn-control.ctl-free .ctl-dot { background: var(--ink-3); }
+.dh-op-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 10px; height: 100%;
+  font: 600 10px 'IBM Plex Mono', 'JetBrains Mono', monospace;
+  letter-spacing: 0.06em; color: var(--ink-2);
+  border-left: 1px solid var(--border);
+}
+.dh-logout { background: transparent; border: 0; color: var(--ink-3); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; }
+.dh-logout:hover { color: var(--error); }
 
 /* =================== UTILITY =================== */
 .cert-pill {

@@ -12,13 +12,18 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from drone_core.config.settings import Settings
 from drone_core.profiles import DroneProfile, profile_store
+from . import auth as authmod
+from .real_control import real_supervisor
+from .radio_relay import radio_manager
 
 router = APIRouter()
+settings = Settings()
 
 APP_ROOT = Path(__file__).parents[1]
 STATIC_DIR = APP_ROOT / "web_ui" / "static"
@@ -250,3 +255,83 @@ async def test_connection(req: TestConnRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return await _run_test_connection(url, req.timeout_s)
+
+
+# =====================================================
+#  Connect / disconnect реального борта (мост к нему)
+# =====================================================
+@router.post("/api/real/connect/{name}")
+async def connect_real(name: str):
+    profile = profile_store.get(name)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="profile_not_found")
+    # Radio: связь идёт через браузерный Web Serial → WS → локальное реле.
+    # MAVSDK-мост цепляется к реле по localhost tcp, а не к железу напрямую.
+    if profile.connection_type == "radio":
+        relay = await radio_manager.ensure(name)
+        url = f"tcp://127.0.0.1:{relay.tcp_port}"
+        return real_supervisor.connect(profile, url_override=url)
+    return real_supervisor.connect(profile)
+
+
+@router.post("/api/real/radio/test/{name}")
+async def radio_test(name: str):
+    """Read-only проверка радио-линка ЧЕРЕЗ реле: MAVSDK цепляется к relay tcp,
+    байты идут браузер↔USB-радио↔борт. Браузерный агент уже должен быть подключён
+    (страница поднимает Web Serial перед вызовом). Если агента нет — будет timeout."""
+    relay = await radio_manager.ensure(name)
+    url = f"tcp://127.0.0.1:{relay.tcp_port}"
+    res = await _run_test_connection(url, 12.0)
+    res["agent_connected"] = relay.agent_connected
+    if not res.get("agent_connected") and not res.get("heartbeat"):
+        res.setdefault("message", "Браузерный радио-агент не подключён — нет потока от борта")
+    return res
+
+
+@router.post("/api/real/disconnect/{name}")
+async def disconnect_real(name: str):
+    res = real_supervisor.disconnect(name)
+    # Для radio дополнительно гасим реле (закроет и браузерный агент).
+    if radio_manager.get(name) is not None:
+        await radio_manager.teardown(name)
+    return res
+
+
+@router.get("/api/real/connections")
+async def real_connections():
+    return {"connections": real_supervisor.status(), "radio": radio_manager.status()}
+
+
+# =====================================================
+#  Radio: WebSocket «связного» из браузера (Web Serial)
+# =====================================================
+@router.websocket("/api/real/radio/agent")
+async def radio_agent_ws(websocket: WebSocket, name: str):
+    """Браузерный агент: гонит сырые MAVLink-байты USB-радио ↔ сервер.
+
+    Авторизация — по той же session-cookie, что и весь UI (агент работает во
+    вкладке залогиненного оператора). Канал бинарный в обе стороны.
+    """
+    payload = authmod.operator_from_cookies(websocket.cookies, settings.SESSION_SECRET)
+    if payload is None:
+        await websocket.close(code=1008)  # policy violation — не залогинен
+        return
+    # name должен быть валидным slug профиля (защита от мусора в ключе реле).
+    if not name or not all(c.isalnum() or c in "_-" for c in name) or len(name) > 40:
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    relay = await radio_manager.attach_agent(name, websocket)
+    print(f"[radio] agent attached for '{name}' (op={payload.get('op')})")
+    try:
+        while True:
+            data = await websocket.receive_bytes()
+            await relay.feed_from_agent(data)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[radio] agent '{name}' ws error: {e}")
+    finally:
+        relay.clear_agent(websocket)
+        print(f"[radio] agent detached for '{name}'")

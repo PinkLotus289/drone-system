@@ -84,44 +84,64 @@
   letter-spacing: 0.04em;
 }
 
-.profile-list { display: flex; flex-direction: column; gap: 6px; }
+.profile-list { display: flex; flex-direction: column; gap: 8px; }
 .profile-empty {
   text-align: center;
   color: var(--ink-3);
   font-size: 11px;
-  padding: 18px 6px;
+  padding: 22px 6px;
   font-style: italic;
 }
-.profile-item {
+
+/* ===== Connection cards (Saved profiles) ===== */
+.pcard {
   border: 1px solid var(--rule);
-  padding: 10px 12px;
+  border-radius: 8px;
   background: var(--paper);
   cursor: pointer;
-  position: relative;
+  overflow: hidden;
+  transition: border-color .12s, box-shadow .12s;
 }
-.profile-item:hover { border-color: var(--ink-0); background: var(--paper-tint); }
-.profile-item.active {
-  border-color: var(--amber);
-  background: var(--amber-soft);
-  box-shadow: inset 3px 0 0 var(--amber);
-}
-.profile-name { font-weight: 700; font-size: 13px; color: var(--ink-0); }
-.profile-meta {
-  font: 600 10px 'IBM Plex Mono', monospace;
-  color: var(--ink-3);
-  margin-top: 3px;
-  letter-spacing: 0.04em;
-}
+.pcard:hover { border-color: var(--ink-2); }
+.pcard.active { border-color: var(--accent, #1d4ed8); box-shadow: 0 0 0 1px var(--accent, #1d4ed8); }
+.pcard.connected { border-color: var(--success, #166534); }
 
-.tips {
-  padding: 6px 4px;
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--ink-2);
+.pcard-main { display: flex; align-items: center; gap: 10px; padding: 11px 12px; }
+.pcard-dot {
+  flex-shrink: 0; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--ink-4, #cbd5e1); box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
 }
-.tips p { margin-bottom: 8px; }
-.tips b { color: var(--ink-0); }
-.tips .mono { color: var(--ink-0); }
+.pcard-dot.on { background: var(--success, #166534); box-shadow: 0 0 6px rgba(22,101,52,.5); }
+.pcard-info { flex: 1; min-width: 0; }
+.pcard-name {
+  font-weight: 700; font-size: 13px; color: var(--ink-0);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pcard-meta {
+  font: 600 10px 'IBM Plex Mono', monospace; color: var(--ink-3);
+  margin-top: 2px; letter-spacing: 0.03em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pcard-btn {
+  flex-shrink: 0;
+  border: 1px solid var(--accent, #1d4ed8);
+  background: var(--accent, #1d4ed8); color: #fff;
+  border-radius: 6px;
+  font: 700 10px 'IBM Plex Sans', sans-serif; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 6px 12px; cursor: pointer;
+}
+.pcard-btn.is-disc { background: var(--paper); color: var(--error, #b91c1c); border-color: var(--error, #b91c1c); }
+.pcard-btn:hover { filter: brightness(0.95); }
+
+.pcard-live {
+  padding: 8px 12px; margin: 0;
+  border-top: 1px solid var(--hairline);
+  background: var(--paper-tint, #f0f9f1);
+  font: 700 10.5px 'IBM Plex Mono', monospace; color: var(--ink-1); letter-spacing: 0.02em;
+  line-height: 1.55;
+}
+.pcard-live .pcard-pos { color: var(--ink-3); font-weight: 500; }
+.pcard-live .pcard-wait { color: var(--ink-3); font-style: italic; font-weight: 500; }
 
 /* ===== Right content ===== */
 .real-content {
@@ -325,3 +345,33 @@
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--paper-tint); }
 ::-webkit-scrollbar-thumb { background: var(--ink-4); }
+
+/* ===== Radio channel (Web Serial) ===== */
+.radio-support {
+  font-size: 12px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper-tint);
+  color: var(--ink-1);
+}
+.radio-support.ok  { border-color: var(--green); color: var(--green); }
+.radio-support.bad { border-color: var(--amber); color: var(--amber); }
+.radio-connect-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px; flex-wrap: wrap;
+}
+/* В этом ряду кнопки не растягиваются на всю ширину (база .btn — flex:1). */
+.radio-connect-row .btn {
+  flex: 0 0 auto;
+  padding: 9px 18px;
+  letter-spacing: 0.1em;
+}
+.radio-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--ink-4); flex-shrink: 0;
+}
+.radio-dot.on   { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.radio-dot.warn { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+.radio-dot.bad  { background: var(--error, #b91c1c); }
+#radio-status { color: var(--ink-2); }

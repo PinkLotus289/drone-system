@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/static/launcher.css?v=3" />
-  <link rel="stylesheet" href="/static/real_connect.css?v=3" />
+  <link rel="stylesheet" href="/static/launcher.css?v=5" />
+  <link rel="stylesheet" href="/static/real_connect.css?v=8" />
 </head>
 <body class="launcher-body">
 
@@ -30,15 +30,8 @@
     </div>
   </div>
   <div class="topbar-spacer"></div>
-  <div class="step-strip">
-    <div class="step done" data-step="1"><span class="s-no">1</span><span>Channel</span></div>
-    <div class="step active" data-step="2"><span class="s-no">2</span><span>Parameters</span></div>
-    <div class="step" data-step="3"><span class="s-no">3</span><span>Test</span></div>
-    <div class="step" data-step="4"><span class="s-no">4</span><span>Save</span></div>
-  </div>
+  <a href="/local_launch" class="back-link">Quick launch →</a>
 </header>
-
-<div class="real-warn-banner mono">⚠ Real drone mode · arming and commands will move physical hardware</div>
 
 <main class="real-main">
 
@@ -49,19 +42,8 @@
       <span class="panel-count mono" id="profile-count">0</span>
     </div>
 
-    <button class="btn btn-primary" id="btn-new-profile" style="width:100%;margin-bottom:12px">+ New profile</button>
-
     <div class="profile-list" id="profile-list">
-      <div class="profile-empty">— no profiles yet — create one on the right</div>
-    </div>
-
-    <div class="panel-head" style="margin-top:18px">
-      <span>Tips</span>
-    </div>
-    <div class="tips">
-      <p><b>Serial</b> is the most reliable for benchtop. Use 57600 with SiK radios, 921600 with direct USB-C.</p>
-      <p><b>UDP</b> works through MAVLink-router. Bind to <span class="mono">0.0.0.0:14550</span> to accept any source.</p>
-      <p><b>TCP</b> is best across LAN. Same port pattern.</p>
+      <div class="profile-empty">— no saved connections yet —</div>
     </div>
   </aside>
 
@@ -69,9 +51,9 @@
   <section class="real-content">
 
     <div class="w-head">
-      <div class="w-eyebrow">Step 2 of 4 · Parameters</div>
+      <div class="w-eyebrow">Connection</div>
       <div class="content-card-title" id="form-title">New connection</div>
-      <div class="w-sub">Verify hardware link parameters, then move to step 3 to validate heartbeat and sensor health.</div>
+      <div class="w-sub">Set the link channel, test the heartbeat, then save the connection to system memory.</div>
       <div class="content-card-actions" style="margin-top:8px">
         <button class="btn btn-ghost hidden" id="btn-delete-profile">🗑 Delete profile</button>
       </div>
@@ -87,35 +69,31 @@
           <div class="field">
             <label class="field-l">Channel type</label>
             <div class="seg">
-              <button type="button" class="seg-btn active" data-conn="serial">Serial</button>
+              <button type="button" class="seg-btn active" data-conn="radio">Radio</button>
               <button type="button" class="seg-btn" data-conn="udp">UDP</button>
               <button type="button" class="seg-btn" data-conn="tcp">TCP</button>
             </div>
           </div>
 
-          <!-- Serial block -->
-          <div id="block-serial">
+          <!-- Radio block — ground USB radio bridged through the browser (Web Serial) -->
+          <div id="block-radio" class="hidden">
+            <div class="radio-support" id="radio-support"></div>
             <div class="field">
-              <label class="field-l">
-                Serial port
-                <button type="button" class="link-btn" id="btn-reload-ports">↻ refresh</button>
-              </label>
-              <select id="f-serial-port">
-                <option value="">— no ports detected —</option>
-              </select>
-              <span class="hint" id="port-hint"></span>
-            </div>
-
-            <div class="field">
-              <label class="field-l">Baud rate</label>
-              <div class="seg" id="baud-seg">
-                <button type="button" class="seg-btn active" data-baud="57600">57600 (SiK)</button>
-                <button type="button" class="seg-btn" data-baud="115200">115200</button>
-                <button type="button" class="seg-btn" data-baud="921600">921600 (USB-C)</button>
-                <button type="button" class="seg-btn" data-baud="custom">Custom</button>
+              <label class="field-l">Radio baud <span class="hint">SiK default 57600</span></label>
+              <div class="seg" id="radio-baud-seg">
+                <button type="button" class="seg-btn active" data-rbaud="57600">57600</button>
+                <button type="button" class="seg-btn" data-rbaud="115200">115200</button>
+                <button type="button" class="seg-btn" data-rbaud="921600">921600</button>
               </div>
-              <input type="number" id="f-baud-custom" class="hidden" placeholder="custom baud" />
+              <button type="button" class="link-btn" id="btn-radio-autodetect">⚲ auto-detect baud</button>
             </div>
+            <div class="radio-connect-row">
+              <button type="button" class="btn btn-primary" id="btn-radio-connect">Connect by radio</button>
+              <button type="button" class="btn btn-ghost hidden" id="btn-radio-disconnect">Disconnect</button>
+              <span class="radio-dot" id="radio-dot"></span>
+              <span class="mono small" id="radio-status">idle</span>
+            </div>
+            <p class="hint">Plug the ground radio into USB, then press “Connect by radio” — the browser will ask which device to use. Keep this tab open during the flight.</p>
           </div>
 
           <!-- UDP / TCP block -->
@@ -137,7 +115,7 @@
 
       <!-- §B Airframe -->
       <div class="panel accent-blue">
-        <div class="p-head"><span class="p-t">§B · Airframe</span><span class="p-sub">basic descriptors</span></div>
+        <div class="p-head"><span class="p-t">§B · Airframe</span><span class="p-sub">identity &amp; notes</span></div>
         <div class="p-body">
 
           <div class="field">
@@ -145,24 +123,8 @@
             <input type="text" id="f-name" required maxlength="40" placeholder="x500_main" pattern="[a-zA-Z0-9_\-]{1,40}" />
           </div>
           <div class="field">
-            <label class="field-l">Display name</label>
+            <label class="field-l">Display name <span class="hint">optional · shown in UI</span></label>
             <input type="text" id="f-display" placeholder="X500 · primary quad" />
-          </div>
-
-          <div class="two-col">
-            <div class="field" style="display:block">
-              <label class="field-l">Frame</label>
-              <input type="text" id="f-frame" value="X500" />
-            </div>
-            <div class="field" style="display:block">
-              <label class="field-l">Battery cells (S)</label>
-              <input type="number" id="f-cells" value="4" min="2" max="14" />
-            </div>
-          </div>
-
-          <div class="field">
-            <label class="field-l">Min voltage <span class="hint">cell-low alert · V</span></label>
-            <input type="number" step="0.1" id="f-vmin" value="14.0" />
           </div>
 
           <div class="field stack">
@@ -193,20 +155,17 @@
 
     <!-- Actions -->
     <div class="actions">
-      <div style="display:flex;gap:10px">
-        <a href="/" class="btn btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">← Back</a>
-      </div>
-      <div style="display:flex;gap:10px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center;margin-left:auto">
         <span class="mono small" id="ready-state">awaiting test</span>
         <button class="btn" id="btn-test-conn">🔌 Test connection</button>
-        <button class="btn" id="btn-save" disabled title="run a successful test first">💾 Save profile</button>
-        <a href="/testing" class="btn btn-primary" id="btn-go-testing" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">Continue → Test flights</a>
+        <button class="btn btn-primary" id="btn-save" disabled title="run a successful test first">💾 Save connection</button>
       </div>
     </div>
 
   </section>
 </main>
 
-<script src="/static/real_connect.js?v=2"></script>
+<script src="/static/radio_link.js?v=3"></script>
+<script src="/static/real_connect.js?v=10"></script>
 </body>
 </html>
