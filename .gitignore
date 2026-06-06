@@ -1,0 +1,26 @@
+# ─── Секреты (НИКОГДА не коммитить) ───
+.env
+.env.*
+# шаблон и dev-конфиг (без секретов) оставляем в репо:
+!.env.example
+!.env.dev
+
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ─── PX4 SITL (собирается локально, ~гигабайты) ───
+PX4-Autopilot/
+
+# ─── Локальные данные / артефакты ───
+.drone_system/
+*.log
+.DS_Store
+
+# ─── IDE ───
+.idea/
+.vscode/

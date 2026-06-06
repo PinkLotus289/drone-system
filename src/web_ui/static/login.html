@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skybite · Sign in</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --accent:#1d4ed8; --paper:#fff; --ink-0:#0b1220; --ink-2:#475569; --ink-3:#94a3b8; --rule:#d8dde3; --error:#b91c1c; --tint:#eef1f5; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'IBM Plex Sans',sans-serif; background:#f3f4ee; color:var(--ink-0);
+           min-height:100vh; display:flex; align-items:center; justify-content:center; }
+    .card { width:360px; background:var(--paper); border:1px solid var(--rule);
+            box-shadow:0 10px 40px rgba(10,14,20,.10); padding:28px 26px; }
+    .brand { display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+    .brand svg { color:var(--accent); }
+    .brand-name { font-weight:700; letter-spacing:.18em; font-size:15px; }
+    .sub { color:var(--ink-3); font-size:11px; letter-spacing:.08em; margin-bottom:22px; }
+    label { display:block; font:700 9px 'IBM Plex Mono',monospace; letter-spacing:.14em;
+            text-transform:uppercase; color:var(--ink-3); margin:14px 0 5px; }
+    input { width:100%; padding:9px 11px; border:1px solid var(--rule); background:var(--paper);
+            font:500 13px 'IBM Plex Mono',monospace; color:var(--ink-0); }
+    input:focus { outline:2px solid #eff4fc; border-color:var(--accent); }
+    button { width:100%; margin-top:20px; padding:11px; border:0; background:var(--accent);
+             color:#fff; font:700 11px 'IBM Plex Sans',sans-serif; letter-spacing:.16em;
+             text-transform:uppercase; cursor:pointer; }
+    button:hover { filter:brightness(.94); }
+    button:disabled { opacity:.6; cursor:wait; }
+    .err { margin-top:14px; color:var(--error); font-size:12px; min-height:16px; }
+    .hint { margin-top:16px; color:var(--ink-3); font-size:10.5px; line-height:1.5; }
+  </style>
+</head>
+<body>
+  <form class="card" id="login-form">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="3" fill="currentColor"/>
+      </svg>
+      <span class="brand-name">SKYBITE</span>
+    </div>
+    <div class="sub">Flight Control · sign in</div>
+
+    <label for="callsign">Callsign / operator</label>
+    <input id="callsign" name="callsign" autocomplete="username" placeholder="e.g. HAWK" />
+
+    <label for="code">Access code</label>
+    <input id="code" name="code" type="password" autocomplete="current-password" placeholder="••••••••" autofocus />
+
+    <button type="submit" id="submit">Enter system</button>
+    <div class="err" id="err"></div>
+    <div class="hint">Shared system — multiple operators, single fleet. Control authority is arbitrated per session.</div>
+  </form>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const err = document.getElementById('err');
+    const btn = document.getElementById('submit');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.textContent = '';
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: document.getElementById('code').value,
+            callsign: document.getElementById('callsign').value,
+          }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.ok) {
+          const params = new URLSearchParams(location.search);
+          location.href = params.get('next') || '/';
+        } else {
+          err.textContent = j.error === 'bad_code' ? 'Invalid access code.' : (j.error || 'Sign-in failed.');
+          btn.disabled = false;
+        }
+      } catch (ex) {
+        err.textContent = 'Network error: ' + ex.message;
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

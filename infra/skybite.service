@@ -1,0 +1,36 @@
+# systemd-юнит приложения Skybite (web UI + radio-реле + порождаемые мосты).
+# Установка:
+#   sudo cp infra/skybite.service /etc/systemd/system/skybite.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now skybite
+# Логи:  journalctl -u skybite -f
+[Unit]
+Description=Skybite Flight Control (web UI + MAVSDK bridges)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=skybite
+WorkingDirectory=/opt/skybite
+
+# .env с секретами (SESSION_SECRET, ACCESS_CODE, COOKIE_SECURE=true и т.д.)
+EnvironmentFile=/opt/skybite/.env
+
+# ВАЖНО: venv/bin в начале PATH — приложение порождает мосты как `python -m ...`,
+# и без этого подхватился бы системный python БЕЗ mavsdk → мосты падали бы.
+Environment=PATH=/opt/skybite/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/opt/skybite/src
+# Профили бортов пишутся в ~/.drone_system/profiles — фиксируем HOME под рабочий каталог.
+Environment=HOME=/opt/skybite
+
+ExecStart=/opt/skybite/.venv/bin/uvicorn web_ui.main:app \
+    --host 127.0.0.1 --port 8000 \
+    --proxy-headers --forwarded-allow-ips=*
+
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

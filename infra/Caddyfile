@@ -1,0 +1,23 @@
+# Skybite reverse proxy — автоматический TLS (Let's Encrypt) + проксирование на uvicorn.
+# Caddy сам получает и продлевает сертификат, поэтому Web Serial (требует https)
+# и wss:// заработают «из коробки». WebSocket Caddy проксирует прозрачно — спец-настроек не нужно.
+#
+# 1) Замени skybite.example.com на свой домен (A-запись должна указывать на сервер).
+# 2) Поставь Caddy и запусти:  sudo caddy run --config /opt/skybite/infra/Caddyfile
+#    (или через systemd-сервис caddy с этим конфигом).
+
+skybite.example.com {
+    encode zstd gzip
+
+    # Весь трафик (включая WebSocket /ws и /api/real/radio/agent) → локальный uvicorn.
+    reverse_proxy 127.0.0.1:8000
+
+    # Базовые security-заголовки.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+}

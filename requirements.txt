@@ -1,0 +1,13 @@
+# Skybite Flight Control — runtime dependencies (pinned to verified versions).
+# Install:  python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+#
+# uvicorn[standard] подтягивает websockets/httptools/uvloop — WebSocket-эндпоинты
+# (/ws и /api/real/radio/agent) без него работать НЕ будут.
+fastapi==0.118.2
+uvicorn[standard]==0.38.0
+pydantic==2.12.0
+pydantic-settings==2.11.0
+paho-mqtt==2.1.0
+PyYAML==6.0.3
+mavsdk==2.8.0
+# starlette / anyio ставятся как зависимости fastapi; websockets/httptools/uvloop — как extras uvicorn.
