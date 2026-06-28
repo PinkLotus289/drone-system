@@ -167,6 +167,10 @@ async def setup_sitl_params(system: System, log_prefix: str) -> None:
         "SENS_EN_BAROSIM": 1,
         "SENS_EN_MAGSIM": 1,
         "SENS_EN_GPSSIM": 1,
+        # Отключаем запись flight-логов (.ulg) в SITL: для симуляции они не нужны,
+        # а при долгих/множественных запусках забивают диск сервера (логи росли
+        # до ~9 ГБ на инстанс и переполнили раздел). -1 = логирование выключено.
+        "SDLOG_MODE": -1,
     }
     float_params = {
         "COM_DISARM_PRFLT": -1.0,  # не авто-disarm если armed без takeoff

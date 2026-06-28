@@ -63,6 +63,17 @@ async def start_px4_instances(cfg: dict):
     subprocess.run(["make", "px4_sitl", "CMAKE_CXX_STANDARD=17"], cwd=px4_dir, check=True)
     print("[PX4] ✅ PX4 собран.")
 
+    # Подчищаем накопленные flight-логи (.ulg) от прошлых запусков: логирование
+    # отключается параметром SDLOG_MODE=-1 в mavsdk_bridge, но старые логи могли
+    # остаться и забивать диск (наблюдали переполнение раздела на сервере).
+    log_dir = build_dir / "log"
+    if log_dir.exists():
+        try:
+            shutil.rmtree(log_dir)
+            print("[PX4] 🧹 Старые flight-логи очищены.")
+        except OSError as e:
+            print(f"[PX4] ⚠️ Не удалось очистить логи: {e!r}")
+
     procs = []
     ready_events = []
     for d in cfg["drones"]:

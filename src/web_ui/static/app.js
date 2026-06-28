@@ -1370,7 +1370,8 @@ function flyToBase(duration = 1.4) {
 // WEBSOCKET
 // =================================================================
 function connectWS() {
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
   ws.onopen = () => {
     state.wsConnected = true;
     setLink('ONLINE', 'ok');

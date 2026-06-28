@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="/static/launcher.css?v=5" />
-  <link rel="stylesheet" href="/static/real_connect.css?v=8" />
+  <link rel="stylesheet" href="/static/real_connect.css?v=13" />
 </head>
 <body class="launcher-body">
 
@@ -42,130 +42,150 @@
       <span class="panel-count mono" id="profile-count">0</span>
     </div>
 
+    <button type="button" class="btn btn-ghost btn-block" id="btn-new-profile">New profile</button>
+
     <div class="profile-list" id="profile-list">
       <div class="profile-empty">— no saved connections yet —</div>
     </div>
   </aside>
 
-  <!-- ===== RIGHT: wizard ===== -->
+  <!-- ===== RIGHT: 3-step wizard ===== -->
   <section class="real-content">
 
     <div class="w-head">
       <div class="w-eyebrow">Connection</div>
       <div class="content-card-title" id="form-title">New connection</div>
-      <div class="w-sub">Set the link channel, test the heartbeat, then save the connection to system memory.</div>
+      <div class="w-sub">Name the drone, pick a channel, connect, then save.</div>
       <div class="content-card-actions" style="margin-top:8px">
-        <button class="btn btn-ghost hidden" id="btn-delete-profile">🗑 Delete profile</button>
+        <button class="btn btn-ghost hidden" id="btn-delete-profile">Delete profile</button>
       </div>
     </div>
 
-    <form id="real-form" autocomplete="off">
+    <form id="real-form" class="wizard" autocomplete="off">
 
-      <!-- §A Channel -->
-      <div class="panel accent-amber">
-        <div class="p-head"><span class="p-t">§A · Channel</span><span class="p-sub">type &amp; port</span></div>
-        <div class="p-body">
-
-          <div class="field">
-            <label class="field-l">Channel type</label>
-            <div class="seg">
-              <button type="button" class="seg-btn active" data-conn="radio">Radio</button>
-              <button type="button" class="seg-btn" data-conn="udp">UDP</button>
-              <button type="button" class="seg-btn" data-conn="tcp">TCP</button>
-            </div>
-          </div>
-
-          <!-- Radio block — ground USB radio bridged through the browser (Web Serial) -->
-          <div id="block-radio" class="hidden">
-            <div class="radio-support" id="radio-support"></div>
+      <!-- STEP 1 — Identity -->
+      <div class="wstep">
+        <div class="wstep-num">1</div>
+        <div class="panel accent-blue wstep-card">
+          <div class="p-head"><span class="p-t">Drone identity</span><span class="p-sub">name &amp; notes</span></div>
+          <div class="p-body">
             <div class="field">
-              <label class="field-l">Radio baud <span class="hint">SiK default 57600</span></label>
-              <div class="seg" id="radio-baud-seg">
-                <button type="button" class="seg-btn active" data-rbaud="57600">57600</button>
-                <button type="button" class="seg-btn" data-rbaud="115200">115200</button>
-                <button type="button" class="seg-btn" data-rbaud="921600">921600</button>
-              </div>
-              <button type="button" class="link-btn" id="btn-radio-autodetect">⚲ auto-detect baud</button>
+              <label class="field-l">Profile name <span class="hint">letters · digits · _ -</span></label>
+              <input type="text" id="f-name" required maxlength="40" placeholder="x500_main" pattern="[a-zA-Z0-9_\-]{1,40}" />
             </div>
-            <div class="radio-connect-row">
-              <button type="button" class="btn btn-primary" id="btn-radio-connect">Connect by radio</button>
-              <button type="button" class="btn btn-ghost hidden" id="btn-radio-disconnect">Disconnect</button>
-              <span class="radio-dot" id="radio-dot"></span>
-              <span class="mono small" id="radio-status">idle</span>
+            <div class="field">
+              <label class="field-l">Display name <span class="hint">optional · shown in UI</span></label>
+              <input type="text" id="f-display" placeholder="X500 · primary quad" />
             </div>
-            <p class="hint">Plug the ground radio into USB, then press “Connect by radio” — the browser will ask which device to use. Keep this tab open during the flight.</p>
-          </div>
-
-          <!-- UDP / TCP block -->
-          <div id="block-net" class="hidden">
-            <div class="two-col">
-              <div class="field" style="display:block">
-                <label class="field-l">Host</label>
-                <input type="text" id="f-net-host" placeholder="0.0.0.0 or IP" />
-              </div>
-              <div class="field" style="display:block">
-                <label class="field-l">Port</label>
-                <input type="number" id="f-net-port" placeholder="14550" />
-              </div>
+            <div class="field stack">
+              <label class="field-l">Notes <span class="hint">optional</span></label>
+              <textarea id="f-notes" rows="2" placeholder="any notes about this airframe"></textarea>
             </div>
           </div>
-
         </div>
       </div>
 
-      <!-- §B Airframe -->
-      <div class="panel accent-blue">
-        <div class="p-head"><span class="p-t">§B · Airframe</span><span class="p-sub">identity &amp; notes</span></div>
-        <div class="p-body">
+      <!-- STEP 2 — Channel -->
+      <div class="wstep">
+        <div class="wstep-num">2</div>
+        <div class="panel accent-amber wstep-card">
+          <div class="p-head"><span class="p-t">Connection channel</span><span class="p-sub">type &amp; parameters</span></div>
+          <div class="p-body">
 
-          <div class="field">
-            <label class="field-l">Profile name <span class="hint">letters · digits · _ -</span></label>
-            <input type="text" id="f-name" required maxlength="40" placeholder="x500_main" pattern="[a-zA-Z0-9_\-]{1,40}" />
-          </div>
-          <div class="field">
-            <label class="field-l">Display name <span class="hint">optional · shown in UI</span></label>
-            <input type="text" id="f-display" placeholder="X500 · primary quad" />
-          </div>
+            <div class="field">
+              <label class="field-l">Channel type</label>
+              <div class="seg" id="conn-seg">
+                <button type="button" class="seg-btn active" data-conn="radio">Radio</button>
+                <button type="button" class="seg-btn" data-conn="udp">UDP</button>
+                <button type="button" class="seg-btn" data-conn="tcp">TCP</button>
+              </div>
+            </div>
 
-          <div class="field stack">
-            <label class="field-l">Notes</label>
-            <textarea id="f-notes" rows="2" placeholder="any notes about this airframe"></textarea>
-          </div>
+            <!-- Radio params — ground USB radio via browser Web Serial -->
+            <div id="block-radio" class="hidden">
+              <div class="radio-support" id="radio-support"></div>
+              <div class="field">
+                <label class="field-l">Radio baud <span class="hint">SiK default 57600</span></label>
+                <div class="seg" id="radio-baud-seg">
+                  <button type="button" class="seg-btn active" data-rbaud="57600">57600</button>
+                  <button type="button" class="seg-btn" data-rbaud="115200">115200</button>
+                  <button type="button" class="seg-btn" data-rbaud="921600">921600</button>
+                </div>
+              </div>
+            </div>
 
+            <!-- UDP / TCP params -->
+            <div id="block-net" class="hidden">
+              <div class="two-col">
+                <div class="field" style="display:block">
+                  <label class="field-l">Host</label>
+                  <input type="text" id="f-net-host" placeholder="0.0.0.0 or IP" />
+                </div>
+                <div class="field" style="display:block">
+                  <label class="field-l">Port</label>
+                  <input type="number" id="f-net-port" placeholder="14550" />
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
 
-      <!-- §C Test connection — results -->
-      <div class="panel accent-green hidden" id="test-results-card">
-        <div class="p-head">
-          <span class="p-t">§C · Test connection · last run</span>
-          <span class="p-sub mono" id="test-meta">waiting…</span>
-        </div>
-        <div style="padding:0">
-          <div class="check-grid" id="check-grid">
-            <!-- Filled by real_connect.js -->
-          </div>
-          <div style="padding:0 16px 16px">
-            <pre class="raw mono" id="raw-result"></pre>
+      <!-- STEP 3 — Connect & save -->
+      <div class="wstep">
+        <div class="wstep-num">3</div>
+        <div class="panel accent-green wstep-card">
+          <div class="p-head"><span class="p-t">Connect &amp; save</span><span class="p-sub">link &amp; store</span></div>
+          <div class="p-body">
+
+            <!-- Radio actions -->
+            <div id="act-radio">
+              <div class="connect-row">
+                <button type="button" class="btn btn-primary btn-lg" id="btn-radio-connect">Select port and connect</button>
+                <button type="button" class="btn btn-ghost hidden" id="btn-radio-disconnect">Disconnect</button>
+              </div>
+              <div class="status-line">
+                <span class="radio-dot" id="radio-dot"></span>
+                <span class="mono small" id="radio-status">idle</span>
+              </div>
+              <p class="hint">Plug the ground radio into USB and press “Select port and connect” — the browser will ask which device to use. Keep this tab open during the flight.</p>
+            </div>
+
+            <!-- UDP / TCP actions -->
+            <div id="act-net" class="hidden">
+              <div class="connect-row">
+                <button type="button" class="btn btn-primary btn-lg" id="btn-test-conn">Test connection</button>
+                <span class="mono small" id="ready-state">awaiting test</span>
+              </div>
+            </div>
+
+            <!-- Test results -->
+            <div class="panel accent-green hidden" id="test-results-card" style="margin-top:14px">
+              <div class="p-head">
+                <span class="p-t">Test connection · last run</span>
+                <span class="p-sub mono" id="test-meta">waiting…</span>
+              </div>
+              <div style="padding:0">
+                <div class="check-grid" id="check-grid"></div>
+                <div style="padding:0 16px 16px"><pre class="raw mono" id="raw-result"></pre></div>
+              </div>
+            </div>
+
+            <div class="save-row">
+              <button type="button" class="btn btn-primary" id="btn-save">Save profile</button>
+            </div>
+
           </div>
         </div>
       </div>
 
     </form>
 
-    <!-- Actions -->
-    <div class="actions">
-      <div style="display:flex;gap:10px;align-items:center;margin-left:auto">
-        <span class="mono small" id="ready-state">awaiting test</span>
-        <button class="btn" id="btn-test-conn">🔌 Test connection</button>
-        <button class="btn btn-primary" id="btn-save" disabled title="run a successful test first">💾 Save connection</button>
-      </div>
-    </div>
-
   </section>
 </main>
 
-<script src="/static/radio_link.js?v=3"></script>
-<script src="/static/real_connect.js?v=10"></script>
+<script src="/static/radio_link.js?v=4"></script>
+<script src="/static/real_connect.js?v=18"></script>
 </body>
 </html>

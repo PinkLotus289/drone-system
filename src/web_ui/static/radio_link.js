@@ -32,7 +32,14 @@
       this._onStatus = () => {};
       this._onError = () => {};
       this._reconnectTimer = null;
+      this._noDataTimer = null;
+      this._sawMavlink = false;
+      this._magicCount = 0;
     }
+
+    // Порог «реально пошёл MAVLink» и время ожидания первых данных от борта.
+    static _MAV_RX_THRESHOLD = 6;
+    static _NO_DATA_MS = 8000;
 
     static isSupported() {
       return typeof navigator !== "undefined" && "serial" in navigator;
@@ -99,9 +106,26 @@
       }
 
       // насос serial → ws (читает порт до stop())
+      // Транспорт поднят, но это ещё НЕ значит, что на том конце дрон: статус
+      // "on air" выставляется только когда реально пошли MAVLink-кадры (см.
+      // _pumpSerialToWs). До этого — "link-up" (ждём борт).
+      this._sawMavlink = false;
+      this._magicCount = 0;
+      this._armNoDataWatchdog();
       this._pumpSerialToWs();
-      this._status("linked");
+      this._status("link-up");
       return true;
+    }
+
+    // Если за _NO_DATA_MS не пришло ни одного MAVLink-кадра — предупреждаем:
+    // скорее всего выбран не тот порт/скорость или дрон не на связи.
+    _armNoDataWatchdog() {
+      if (this._noDataTimer) clearTimeout(this._noDataTimer);
+      this._noDataTimer = setTimeout(() => {
+        if (this._active && !this._sawMavlink) {
+          this._status("no-data");
+        }
+      }, RadioLink._NO_DATA_MS);
     }
 
     async _openWs() {
@@ -126,7 +150,7 @@
       this._reconnectTimer = setTimeout(async () => {
         this._reconnectTimer = null;
         if (!this._active) return;
-        try { await this._openWs(); this._status("linked"); }
+        try { await this._openWs(); this._status(this._sawMavlink ? "on-air" : "link-up"); }
         catch { this._scheduleReconnect(); }
       }, 2000);
     }
@@ -138,8 +162,11 @@
         while (this._active) {
           const { value, done } = await this._reader.read();
           if (done) break;
-          if (value && value.length && this._ws && this._ws.readyState === WebSocket.OPEN) {
-            this._ws.send(value); // Uint8Array → бинарный фрейм
+          if (value && value.length) {
+            if (!this._sawMavlink) this._sniffMavlink(value);
+            if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+              this._ws.send(value); // Uint8Array → бинарный фрейм
+            }
           }
         }
       } catch (e) {
@@ -147,6 +174,20 @@
       } finally {
         try { this._reader && this._reader.releaseLock(); } catch {}
         this._reader = null;
+      }
+    }
+
+    // Ищем MAVLink-magic в входящем потоке. Несколько magic-байтов подряд по
+    // времени — надёжный признак, что на том конце реально дрон, а не случайный
+    // serial-/Bluetooth-девайс (который молчит или шлёт не-MAVLink).
+    _sniffMavlink(chunk) {
+      for (const b of chunk) {
+        if (MAVLINK_MAGIC.has(b)) this._magicCount++;
+      }
+      if (this._magicCount >= RadioLink._MAV_RX_THRESHOLD) {
+        this._sawMavlink = true;
+        if (this._noDataTimer) { clearTimeout(this._noDataTimer); this._noDataTimer = null; }
+        this._status("on-air");
       }
     }
 
@@ -172,6 +213,9 @@
       const wasActive = this._active;
       this._active = false;
       if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+      if (this._noDataTimer) { clearTimeout(this._noDataTimer); this._noDataTimer = null; }
+      this._sawMavlink = false;
+      this._magicCount = 0;
 
       try { this._reader && (await this._reader.cancel()); } catch {}
       try { this._reader && this._reader.releaseLock(); } catch {}

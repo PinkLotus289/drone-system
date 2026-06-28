@@ -17,6 +17,50 @@
   const radioLink = (typeof RadioLink !== "undefined") ? new RadioLink() : null;
   let radioActiveName = null;       // имя профиля, который сейчас связан по радио
 
+  // ========== Validation ==========
+  const NAME_RE = /^[a-zA-Z0-9_\-]{1,40}$/;
+
+  function setFieldError(input, msg) {
+    if (!input) return;
+    const host = input.closest(".field") || input.parentElement;
+    let el = host.querySelector(".field-err");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "field-err";
+      host.appendChild(el);
+    }
+    el.textContent = msg || "";
+    el.style.display = msg ? "block" : "none";
+    input.classList.toggle("invalid", !!msg);
+  }
+
+  function clearErrors() {
+    document.querySelectorAll(".field-err").forEach(e => { e.textContent = ""; e.style.display = "none"; });
+    document.querySelectorAll(".invalid").forEach(e => e.classList.remove("invalid"));
+  }
+
+  // Полная проверка формы перед test/connect/save. Показывает ошибки прямо под
+  // полями (без серверных 422/500) и фокусирует первое проблемное поле.
+  function validateForm() {
+    clearErrors();
+    let firstBad = null;
+    const fail = (input, msg) => { setFieldError(input, msg); firstBad = firstBad || input; };
+
+    const name = $("f-name").value.trim();
+    if (!name) fail($("f-name"), "Enter a profile name");
+    else if (!NAME_RE.test(name)) fail($("f-name"), "Letters, digits, “_” and “-” only (max 40 chars)");
+
+    if (connType === "udp" || connType === "tcp") {
+      const host = $("f-net-host").value.trim();
+      const port = parseInt($("f-net-port").value, 10);
+      if (connType === "tcp" && !host) fail($("f-net-host"), "Enter host (drone IP)");
+      if (isNaN(port) || port < 1 || port > 65535) fail($("f-net-port"), "Port must be 1–65535");
+    }
+
+    if (firstBad) { firstBad.focus(); return false; }
+    return true;
+  }
+
   // ========== Helpers ==========
   function fillForm(p) {
     $("f-name").value = p.name || "";
@@ -79,6 +123,7 @@
     setBaud(57600);
     setRadioBaud(57600);
     $("test-results-card").classList.add("hidden");
+    syncRadioUi(null);
     updateSaveButton();
     document.querySelectorAll("#profile-list .pcard").forEach(el => el.classList.remove("active"));
   }
@@ -93,9 +138,11 @@
     $("block-net").classList.toggle("hidden", t !== "udp" && t !== "tcp");
     const br = $("block-radio");
     if (br) br.classList.toggle("hidden", t !== "radio");
-    // Test connection доступен для всех каналов (для radio — через реле, см. testRadio).
-    const testBtn = $("btn-test-conn");
-    if (testBtn) testBtn.classList.remove("hidden");
+    // Шаг 3 — блоки действий: радио (Connect by radio) vs сеть (Test connection).
+    const ar = $("act-radio");
+    if (ar) ar.classList.toggle("hidden", t !== "radio");
+    const an = $("act-net");
+    if (an) an.classList.toggle("hidden", t === "radio");
     if (t === "radio") renderRadioSupport();
     updateSaveButton();
   }
@@ -115,10 +162,10 @@
     const ok = radioLink && RadioLink.isSupported();
     if (ok) {
       el.className = "radio-support ok";
-      el.innerHTML = "✓ This browser supports Web Serial — radio connection available.";
+      el.innerHTML = "This browser supports Web Serial — radio connection available.";
     } else {
       el.className = "radio-support bad";
-      el.innerHTML = "⚠ This browser does not support Web Serial. Open the page in <b>Chrome</b>, <b>Edge</b>, Brave or Opera on a desktop (not on a phone).";
+      el.innerHTML = "This browser does not support Web Serial. Open the page in <b>Chrome</b>, <b>Edge</b>, Brave or Opera on a desktop (not on a phone).";
     }
     if (connectBtn) connectBtn.disabled = !ok;
     if (autoBtn) autoBtn.style.display = ok ? "" : "none";
@@ -143,19 +190,14 @@
   }
 
   function updateSaveButton() {
-    // Для radio сохранять можно без серверного теста (проверка = сам коннект).
-    const gateOk = (connType === "radio") || lastTestOk;
-    $("btn-save").disabled = !gateOk;
-    $("btn-save").title = gateOk ? "Save profile" : "Run a successful Test Connection first";
+    // Save доступен всегда; корректность ввода проверяет validateForm при клике.
+    const saveBtn = $("btn-save");
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.title = "Save profile"; }
+    // ready-state — только для сетевых каналов (в act-net); для radio скрыт.
     const ready = document.getElementById("ready-state");
-    if (ready) {
-      if (connType === "radio") {
-        ready.textContent = "radio · save then connect";
-        ready.style.color = "var(--ink-3)";
-      } else {
-        ready.textContent = lastTestOk ? "✓ validated · ready to save" : "awaiting test";
-        ready.style.color = lastTestOk ? "var(--green)" : "var(--ink-3)";
-      }
+    if (ready && connType !== "radio") {
+      ready.textContent = lastTestOk ? "validated · ready" : "awaiting test";
+      ready.style.color = lastTestOk ? "var(--green)" : "var(--ink-3)";
     }
   }
 
@@ -182,7 +224,7 @@
       sel.innerHTML = "";
       if (!j.ports || j.ports.length === 0) {
         sel.innerHTML = '<option value="">— no ports detected —</option>';
-        hint.textContent = "connect cable/radio and press ↻";
+        hint.textContent = "connect cable/radio and reload";
         return;
       }
       for (const p of j.ports) {
@@ -210,6 +252,7 @@
   }
 
   async function saveProfile() {
+    if (!validateForm()) return;
     const body = readForm();
     const r = await fetch("/api/real/profiles", {
       method: "POST",
@@ -227,20 +270,16 @@
       });
     } else {
       const err = await r.json().catch(() => ({}));
-      alert("Save failed: " + (err.detail || r.statusText));
+      // В HTTP/2 r.statusText всегда пустой — показываем код статуса и detail
+      // (для 422 — текст валидации, для 500 — фолбэк).
+      const reason = err.detail || r.statusText || "server error";
+      alert(`Save failed (${r.status}): ${reason}`);
     }
   }
 
   async function testConnection() {
+    if (!validateForm()) return;
     const body = readForm();
-    if (body.connection_type === "serial" && !body.serial_port) {
-      alert("Select a serial port");
-      return;
-    }
-    if (body.connection_type !== "serial" && (!body.net_port)) {
-      alert("Set host/port");
-      return;
-    }
 
     const card = $("test-results-card");
     card.classList.remove("hidden");
@@ -283,7 +322,7 @@
       grid.appendChild(el);
     }
 
-    add("HEARTBEAT", j.heartbeat ? "✓ OK" : "✗ no", j.heartbeat ? "ok" : "bad");
+    add("HEARTBEAT", j.heartbeat ? "OK" : "none", j.heartbeat ? "ok" : "bad");
 
     if (j.error) {
       add("ERROR", j.error, "bad");
@@ -317,12 +356,12 @@
 
     if (j.health) {
       const h = j.health;
-      add("CALIB GYRO", h.gyro_ok ? "✓" : "✗", h.gyro_ok ? "ok" : "bad");
-      add("CALIB ACCEL", h.accel_ok ? "✓" : "✗", h.accel_ok ? "ok" : "bad");
-      add("CALIB MAG", h.mag_ok ? "✓" : "✗", h.mag_ok ? "ok" : "bad");
-      add("GLOBAL POS", h.global_pos_ok ? "✓" : "✗", h.global_pos_ok ? "ok" : "warn");
-      add("HOME POS", h.home_ok ? "✓" : "✗", h.home_ok ? "ok" : "warn");
-      add("ARMABLE", h.armable ? "✓ READY" : "✗ NOT READY", h.armable ? "ok" : "bad");
+      add("CALIB GYRO", h.gyro_ok ? "OK" : "FAIL", h.gyro_ok ? "ok" : "bad");
+      add("CALIB ACCEL", h.accel_ok ? "OK" : "FAIL", h.accel_ok ? "ok" : "bad");
+      add("CALIB MAG", h.mag_ok ? "OK" : "FAIL", h.mag_ok ? "ok" : "bad");
+      add("GLOBAL POS", h.global_pos_ok ? "OK" : "no", h.global_pos_ok ? "ok" : "warn");
+      add("HOME POS", h.home_ok ? "OK" : "no", h.home_ok ? "ok" : "warn");
+      add("ARMABLE", h.armable ? "READY" : "NOT READY", h.armable ? "ok" : "bad");
     }
 
     if (j.flight_mode) {
@@ -364,7 +403,13 @@
   }
 
   // ========== Radio (Web Serial в браузере) ==========
+  // Последний статус активного радио-линка (он один на вкладку, поэтому всегда
+  // относится к radioActiveName). Нужен, чтобы восстановить статус при возврате
+  // к подключённому профилю после просмотра другого.
+  let radioLastStatus = { text: "idle", kind: "" };
+
   function setRadioStatus(text, kind) {
+    radioLastStatus = { text, kind: kind || "" };
     const s = $("radio-status"); const dot = $("radio-dot");
     if (s) s.textContent = text;
     if (dot) dot.className = "radio-dot" + (kind ? " " + kind : "");
@@ -372,6 +417,23 @@
   function resetRadioButtons() {
     $("btn-radio-connect")?.classList.remove("hidden");
     $("btn-radio-disconnect")?.classList.add("hidden");
+  }
+
+  // Привести радио-блок §3 (статус + кнопки Connect/Disconnect) в соответствие
+  // ВЫБРАННОМУ профилю. Радио-линк один на вкладку, поэтому для всех профилей,
+  // кроме активного, показываем "idle" + Connect, не трогая реальный статус линка.
+  function syncRadioUi(name) {
+    const s = $("radio-status"); const dot = $("radio-dot");
+    if (radioActiveName && radioActiveName === name) {
+      $("btn-radio-connect")?.classList.add("hidden");
+      $("btn-radio-disconnect")?.classList.remove("hidden");
+      if (s) s.textContent = radioLastStatus.text;
+      if (dot) dot.className = "radio-dot" + (radioLastStatus.kind ? " " + radioLastStatus.kind : "");
+    } else {
+      resetRadioButtons();
+      if (s) s.textContent = "idle";
+      if (dot) dot.className = "radio-dot";
+    }
   }
 
   async function startRadio(name, baudVal) {
@@ -385,7 +447,12 @@
       "port-open": ["port open", "warn"],
       "server-open": ["linking to server…", "warn"],
       "connecting-server": ["starting bridge to drone…", "warn"],
-      "linked": ["● on air", "on"],
+      // Транспорт поднят, но дрон ещё не подтверждён (нет MAVLink-кадров).
+      "link-up": ["link up · waiting for drone…", "warn"],
+      // Реально пошёл MAVLink-поток от борта — вот это настоящий on air.
+      "on-air": ["on air", "on"],
+      // За таймаут не пришло ни одного MAVLink-кадра.
+      "no-data": ["no telemetry — wrong device/baud or drone offline", "bad"],
       "reconnecting": ["reconnecting…", "warn"],
       "stopped": ["idle", ""],
     };
@@ -393,7 +460,7 @@
       await radioLink.start({
         name, baud: baudVal || radioBaud, force: true,
         onStatus: (phase, detail) => {
-          if (phase === "warn") { setRadioStatus("⚠ " + detail, "warn"); return; }
+          if (phase === "warn") { setRadioStatus(detail, "warn"); return; }
           if (phase === "error") { setRadioStatus("error: " + detail, "bad"); return; }
           const m = phaseMap[phase];
           setRadioStatus(m ? (m[0] + (detail ? " " + detail : "")) : phase, m ? m[1] : "");
@@ -417,9 +484,10 @@
   }
 
   async function onRadioConnectClick() {
+    if (!validateForm()) return;
     const data = readForm();
-    if (!data.name) { alert("Set a profile name first (§B · Airframe)"); $("f-name").focus(); return; }
-    await saveProfile();           // profile must exist (relay key = name)
+    // Профиль НЕ сохраняем — подключение работает с временным профилем на сервере
+    // (имя = только ключ реле). Сохранение — отдельным действием по кнопке Save.
     await startRadio(data.name, radioBaud);
   }
 
@@ -436,10 +504,9 @@
   // Read-only проверка радио-линка: поднимаем serial+WS (без полного моста),
   // сервер читает heartbeat/health через реле, показываем в §C.
   async function testRadio() {
+    if (!validateForm()) return;
     const data = readForm();
-    if (!data.name) { alert("Set a profile name first (§B · Airframe)"); $("f-name").focus(); return; }
     if (!radioLink) { alert("Web Serial is not supported in this browser — open it in Chrome or Edge"); return; }
-    await saveProfile();
 
     const card = $("test-results-card");
     card.classList.remove("hidden");
@@ -453,7 +520,7 @@
         name: data.name, baud: radioBaud, force: true, spawnBridge: false,
         onStatus: (phase, detail) => {
           if (phase === "error") setRadioStatus("error: " + detail, "bad");
-          else if (phase === "linked") setRadioStatus("● link up (testing)", "warn");
+          else if (phase === "linked") setRadioStatus("link up (testing)", "warn");
           else setRadioStatus(phase + (detail ? " " + detail : ""), "warn");
         },
       });
@@ -491,10 +558,32 @@
     $("form-title").textContent = `Profile: ${p.name}`;
     $("btn-delete-profile").classList.remove("hidden");
     $("test-results-card").classList.add("hidden");
+    syncRadioUi(p.name);   // статус/кнопки радио — для ЭТОГО профиля, не прошлого
     updateSaveButton();
     // подсветить активную карточку без полной перерисовки
     document.querySelectorAll("#profile-list .pcard").forEach((el) =>
       el.classList.toggle("active", el.dataset.name === p.name));
+  }
+
+  // Сброс формы под новый профиль (кнопка New profile).
+  function newProfile() {
+    activeName = null;
+    lastTestOk = false;
+    $("f-name").value = "";
+    $("f-display").value = "";
+    $("f-notes").value = "";
+    $("f-net-host").value = "";
+    $("f-net-port").value = "";
+    clearErrors();
+    setConnType("radio");
+    setRadioBaud(57600);
+    $("form-title").textContent = "New connection";
+    $("btn-delete-profile").classList.add("hidden");
+    $("test-results-card").classList.add("hidden");
+    document.querySelectorAll("#profile-list .pcard").forEach((el) => el.classList.remove("active"));
+    syncRadioUi(null);   // новый профиль ещё ни к чему не подключён
+    updateSaveButton();
+    $("f-name").focus();
   }
 
   // Полная (ре)сборка списка — только при изменении НАБОРА профилей / выборе.
@@ -511,7 +600,7 @@
       if (p.connection_type === "serial") {
         sub = `serial · ${p.serial_port?.split("/").pop() || "?"} @ ${p.serial_baud}`;
       } else if (p.connection_type === "radio") {
-        sub = `📡 radio · ${p.serial_baud || 57600} baud · browser`;
+        sub = `radio · ${p.serial_baud || 57600} baud · browser`;
       } else {
         sub = `${p.connection_type.toUpperCase()} · ${p.net_host || "0.0.0.0"}:${p.net_port}`;
       }
@@ -525,24 +614,11 @@
             <div class="pcard-name">${p.display_name || p.name}</div>
             <div class="pcard-meta mono">${sub}</div>
           </div>
-          <button class="pcard-btn" data-btn type="button">Connect</button>
         </div>
         <div class="pcard-live mono" data-live hidden></div>
       `;
+      // Клик по карточке = открыть профиль (загрузить параметры в поля формы).
       el.addEventListener("click", () => selectProfile(p));
-      el.querySelector("[data-btn]").addEventListener("click", (e) => {
-        e.stopPropagation();
-        const connected = !!(connections[p.name] && connections[p.name].connected);
-        if (p.connection_type === "radio") {
-          // Radio коннектится через браузер (Web Serial), не серверным POST.
-          if (connected || radioActiveName === p.name) stopRadio();
-          else startRadio(p.name, p.serial_baud || 57600);
-        } else if (connected) {
-          disconnectProfile(p.name);
-        } else {
-          connectProfile(p.name);
-        }
-      });
       list.appendChild(el);
     }
     refreshLive();
@@ -555,10 +631,10 @@
       const connected = !!(connections[name] && connections[name].connected);
       el.classList.toggle("connected", connected);
       const dot = el.querySelector("[data-dot]");
-      const btn = el.querySelector("[data-btn]");
       const live = el.querySelector("[data-live]");
       if (dot) dot.className = "pcard-dot" + (connected ? " on" : "");
-      if (btn) { btn.textContent = connected ? "Disconnect" : "Connect"; btn.className = "pcard-btn" + (connected ? " is-disc" : ""); }
+      // Кнопка карточки всегда "Open" (загрузка профиля в поля) — больше не
+      // превращаем её в Connect/Disconnect.
       if (!live) return;
       if (!connected) { live.hidden = true; live.textContent = ""; return; }
       live.hidden = false;
@@ -566,7 +642,7 @@
       if (!d) { live.innerHTML = '<span class="pcard-wait">link up · waiting for telemetry…</span>'; return; }
       const alt = d.alt != null ? Number(d.alt).toFixed(1) + "m" : "—";
       const batt = d.battery_pct != null ? Math.round(d.battery_pct) + "%" : "—";
-      const sats = d.sat_count != null ? d.sat_count + "🛰" : "—";
+      const sats = d.sat_count != null ? d.sat_count + " sat" : "—";
       const pos = d.lat != null ? `${Number(d.lat).toFixed(5)}, ${Number(d.lon).toFixed(5)}` : "—";
       live.innerHTML = `<b>${d.status || "LINK"}</b> · ALT ${alt} · BAT ${batt} · GPS ${sats}<br><span class="pcard-pos">${pos}</span>`;
     });
@@ -595,6 +671,7 @@
 
   $("btn-reload-ports")?.addEventListener("click", loadSerialPorts);
   $("btn-delete-profile").addEventListener("click", deleteCurrent);
+  $("btn-new-profile")?.addEventListener("click", newProfile);
   $("btn-test-conn").addEventListener("click", () => (connType === "radio" ? testRadio() : testConnection()));
   $("btn-save").addEventListener("click", saveProfile);
 
@@ -603,7 +680,16 @@
     btn.addEventListener("click", () => setRadioBaud(btn.dataset.rbaud)));
   $("btn-radio-connect")?.addEventListener("click", onRadioConnectClick);
   $("btn-radio-disconnect")?.addEventListener("click", stopRadio);
-  $("btn-radio-autodetect")?.addEventListener("click", onRadioAutodetect);
+
+  // Живая валидация: поле имени принимает только разрешённые символы, а ошибки
+  // под полями гаснут по мере исправления (серверных ошибок ввода больше нет).
+  $("f-name")?.addEventListener("input", (e) => {
+    const cleaned = e.target.value.replace(/[^a-zA-Z0-9_\-]/g, "").slice(0, 40);
+    if (cleaned !== e.target.value) e.target.value = cleaned;
+    setFieldError($("f-name"), "");
+  });
+  $("f-net-host")?.addEventListener("input", () => setFieldError($("f-net-host"), ""));
+  $("f-net-port")?.addEventListener("input", () => setFieldError($("f-net-port"), ""));
   // Если оператор уходит со страницы — корректно гасим радио-линк.
   window.addEventListener("beforeunload", () => { if (radioActiveName && radioLink) radioLink.stop(); });
 

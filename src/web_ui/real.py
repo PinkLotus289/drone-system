@@ -34,7 +34,12 @@ STATIC_DIR = APP_ROOT / "web_ui" / "static"
 # =====================================================
 @router.get("/real")
 async def real_page():
-    return FileResponse(str(STATIC_DIR / "real_connect.html"))
+    # no-store на сам HTML: иначе браузер/Caddy отдаёт кэш со ссылкой на старую
+    # версию real_connect.js (?v=N) и правки UI не подхватываются без хард-релоада.
+    return FileResponse(
+        str(STATIC_DIR / "real_connect.html"),
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 # =====================================================
@@ -264,7 +269,13 @@ async def test_connection(req: TestConnRequest):
 async def connect_real(name: str):
     profile = profile_store.get(name)
     if profile is None:
-        raise HTTPException(status_code=404, detail="profile_not_found")
+        # Профиль ещё не сохранён — разрешаем подключиться по радио с временным
+        # профилем (имя = только ключ реле, параметры радио задаёт браузер).
+        # На диск ничего не пишем; сохранение — отдельное действие (кнопка Save).
+        try:
+            profile = DroneProfile(name=name, connection_type="radio")
+        except Exception:
+            raise HTTPException(status_code=404, detail="profile_not_found")
     # Radio: связь идёт через браузерный Web Serial → WS → локальное реле.
     # MAVSDK-мост цепляется к реле по localhost tcp, а не к железу напрямую.
     if profile.connection_type == "radio":
