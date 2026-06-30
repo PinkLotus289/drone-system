@@ -523,6 +523,48 @@ async def api_missions():
     return [m.dict() for m in ms]
 
 
+# --- Terrain elevation (единый серверный прокси к SRTM/3DEP) ----------------
+# Фронт и планировщик ходят сюда, а не во внешние API напрямую: общий кэш,
+# единый rate-limit/фоллбэк, отсутствие CORS-проблем в браузере.
+@app.get("/api/terrain/point")
+async def api_terrain_point(lat: float, lon: float, src: str = "srtm"):
+    """Высота (м MSL) в точке. src=srtm (глобально) | 3dep (LiDAR, только США)."""
+    from drone_core.infra.terrain import terrain_service, terrain_service_3dep
+    if src == "3dep":
+        elev = await terrain_service_3dep.get_elevation(lat, lon)
+        if elev is None:
+            return {"elevation": None, "source": "3dep", "available": False}
+        return {"elevation": elev, "source": "3dep", "available": True}
+    res = await terrain_service.get_elevations_meta([(lat, lon)])
+    return {
+        "elevation": res.elevations[0] if res.elevations else None,
+        "source": "srtm30m",
+        "available": res.resolved > 0,
+        "degraded": res.degraded,
+    }
+
+
+@app.post("/api/terrain/batch")
+async def api_terrain_batch(body: Dict[str, Any]):
+    """Батч-высоты для списка точек. body: {locations: [[lat,lon],...]}."""
+    from drone_core.infra.terrain import terrain_service
+    raw = (body or {}).get("locations") or []
+    locs = []
+    for item in raw:
+        try:
+            locs.append((float(item[0]), float(item[1])))
+        except (TypeError, ValueError, IndexError):
+            return JSONResponse({"error": "invalid_locations"}, status_code=400)
+    res = await terrain_service.get_elevations_meta(locs)
+    return {
+        "elevations": res.elevations,
+        "resolved": res.resolved,
+        "total": res.total,
+        "degraded": res.degraded,
+        "source": "srtm30m",
+    }
+
+
 @app.get("/api/settings")
 async def api_settings():
     cfg = read_cfg()

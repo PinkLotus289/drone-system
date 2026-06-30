@@ -46,6 +46,62 @@ const viewer = new Cesium.Viewer('cesium', {
 });
 viewer.imageryLayers.addImageryProvider(darkTiles);
 
+// Elevation overlay — two stacked layers, toggled by ⛰ ELEV button.
+// Layer 1: OpenTopoMap — hypsometric coloring (green→tan→brown) + contour lines.
+const topoLayer = viewer.imageryLayers.addImageryProvider(
+  new Cesium.UrlTemplateImageryProvider({
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c'],
+    credit: 'OpenTopoMap contributors (CC-BY-SA)',
+    maximumLevel: 17,
+  })
+);
+topoLayer.show = false;
+topoLayer.alpha = 0.68;
+// Layer 2: ESRI World Hillshade — subtle depth hint only.
+const hillshadeLayer = viewer.imageryLayers.addImageryProvider(
+  new Cesium.UrlTemplateImageryProvider({
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+    credit: 'ESRI World Hillshade',
+    maximumLevel: 13,
+  })
+);
+hillshadeLayer.show = false;
+hillshadeLayer.alpha = 0.22;
+
+// Elevation query state — read by initCursorReadout.
+let _elevModeActive = false;
+let _elevSource = 'srtm'; // 'srtm' | '3dep'
+// Per-source cache: key = "lat4,lon4"
+const _elevCacheSrtm = new Map();
+const _elevCache3dep = new Map();
+
+// Cursor elevation now goes through our own /api/terrain proxy: one shared
+// cache with the route planner, one rate-limit/fallback policy, no browser CORS.
+function _elevFetch(lat, lon) {
+  const k = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  const is3dep = _elevSource === '3dep';
+  const cache = is3dep ? _elevCache3dep : _elevCacheSrtm;
+  const tag = is3dep ? '3DEP' : 'SRTM';
+  if (cache.has(k)) {
+    setText('cur-elev', `${Math.round(cache.get(k))} m ${tag}`);
+    return;
+  }
+  const src = is3dep ? '3dep' : 'srtm';
+  fetch(`/api/terrain/point?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}&src=${src}`)
+    .then((r) => r.json())
+    .then((data) => {
+      const elev = data?.elevation;
+      if (data?.available && elev != null) {
+        cache.set(k, elev);
+        setText('cur-elev', `${Math.round(elev)} m ${tag}`);
+      } else {
+        setText('cur-elev', is3dep ? '— 3DEP (USA only)' : '— SRTM n/a');
+      }
+    })
+    .catch(() => { setText('cur-elev', `— ${tag} err`); });
+}
+
 viewer.scene.globe.enableLighting = false;
 viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#f3f4ee');
 viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#f3f4ee');
@@ -121,7 +177,7 @@ const SETTINGS_DEFAULTS = {
   show_gantt: true,
   show_ptt: false,            // PTT Comms — нерабочая панель, выключена из базового конфига
   show_event_log: true,
-  show_doc_foot: true,
+  show_doc_foot: false,
   // Panels · default OFF
   show_schematic: false,
   // Map / display
@@ -132,7 +188,7 @@ const SETTINGS_DEFAULTS = {
 // Bump this when SETTINGS_DEFAULTS-семантика существенно меняется и старые
 // сохранённые preferences становятся неактуальными. Старая запись без поля
 // settings_version форсится на дефолт (с сохранением drawings).
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 
 function loadStore() {
   try {
@@ -511,6 +567,26 @@ function wireSettings() {
     zoomToFleet();
     const g = zoomFleetStrip.closest('.dh-group');
     if (g) g.classList.remove('open');
+  });
+
+  const topoBtn = document.getElementById('dh-topo-toggle');
+  if (topoBtn) topoBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const on = !topoBtn.classList.contains('active');
+    topoBtn.classList.toggle('active', on);
+    topoLayer.show = on;
+    hillshadeLayer.show = on;
+    _elevModeActive = on;
+  });
+
+  const depBtn = document.getElementById('dh-elev-3dep');
+  if (depBtn) depBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const use3dep = !depBtn.classList.contains('active');
+    depBtn.classList.toggle('active', use3dep);
+    _elevSource = use3dep ? '3dep' : 'srtm';
+    // Immediately update the label in the cursor overlay if visible
+    if (_elevModeActive) setText('cur-elev', `… m ${use3dep ? '3DEP' : 'SRTM'}`);
   });
 
   // ── Drawer (минимальный — drawings list + Export/Reset) ────────
@@ -1057,6 +1133,8 @@ function initCursorReadout() {
   const overlay = document.getElementById('hud-cursor');
   if (!overlay) return;
 
+  let _elevTimer = null;
+
   const handler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
   handler.setInputAction((movement) => {
     const ray = viewer.camera.getPickRay(movement.endPosition);
@@ -1083,7 +1161,22 @@ function initCursorReadout() {
     setText('cur-mgrs', mgrsStr);
     setText('cur-lat', lat.toFixed(6) + '°');
     setText('cur-lon', lon.toFixed(6) + '°');
-    setText('cur-elev', `${Math.round(elev)} m AMSL`);
+
+    if (_elevModeActive) {
+      // Show cached value immediately; otherwise debounce-fetch.
+      const k = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+      const cache = _elevSource === '3dep' ? _elevCache3dep : _elevCacheSrtm;
+      const label = _elevSource === '3dep' ? '3DEP' : 'SRTM';
+      if (cache.has(k)) {
+        setText('cur-elev', `${Math.round(cache.get(k))} m ${label}`);
+      } else {
+        setText('cur-elev', `… m ${label}`);
+        clearTimeout(_elevTimer);
+        _elevTimer = setTimeout(() => _elevFetch(lat, lon), 400);
+      }
+    } else {
+      setText('cur-elev', `${Math.round(elev)} m AMSL`);
+    }
 
     // RNG/BRG до selectedDroneId или базы
     const sel = state.selectedDroneId ? state.drones.get(state.selectedDroneId) : null;
@@ -1447,6 +1540,22 @@ function handleMsg(msg) {
       status: 'PLANNED',
     });
     logEvent('orch', `mission ${short(mid)} planned (${pl.waypoints.length} wps)`);
+    // Terrain quality warnings from the orchestrator (SRTM degraded / clearance lifts).
+    const terr = pl.terrain;
+    if (terr) {
+      if (terr.degraded) {
+        logEvent('terrain', `⚠ rельеф неполный (${terr.resolved}/${terr.total} точек) — высоты приблизительны`, 'warn');
+      }
+      const clr = terr.clearance;
+      if (clr) {
+        if (clr.lifted_waypoints > 0) {
+          logEvent('terrain', `⛰ клиренс: поднято ${clr.lifted_waypoints} точек (макс +${Math.round(clr.max_lift_m)}м)`, 'warn');
+        }
+        if (clr.unresolved_violations > 0) {
+          logEvent('terrain', `❗ ${clr.unresolved_violations} препятствий на взлёте/посадке выше трека`, 'error');
+        }
+      }
+    }
     return;
   }
 

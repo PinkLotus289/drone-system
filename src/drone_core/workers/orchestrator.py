@@ -7,7 +7,8 @@ from typing import Dict, Optional
 from drone_core.config.settings import Settings
 from drone_core.infra.repositories import make_repos
 from drone_core.domain.models import Order, MissionStatus, VehicleStatus
-from drone_core.workers.planner import plan_order
+from drone_core.workers.planner import apply_terrain_agl, enforce_clearance, plan_order
+from drone_core.infra.terrain import terrain_service
 from drone_core.infra.messaging.mqtt_bus import MqttBus
 from drone_core.infra.messaging import topics  # твой topics.py
 
@@ -152,11 +153,47 @@ class Orchestrator:
             mission.notes = order_notes
             mission.takeoff_profile = order_takeoff_profile
             print(f"🟢 [ORCH] ✏️ Маршрут построен plan_order ({len(mission.waypoints)} точек)")
+
+        # Корректируем высоты waypoints: AGL → MSL (добавляем рельеф SRTM30m).
+        terrain_meta = None
+        try:
+            mission.waypoints, _tres = await apply_terrain_agl(mission.waypoints, terrain_service)
+            terrain_meta = {
+                "resolved": _tres.resolved,
+                "total": _tres.total,
+                "degraded": _tres.degraded,
+                "source": "srtm30m",
+            }
+            if _tres.degraded:
+                print(f"🟠 [ORCH] ⚠️ Terrain DEGRADED: только {_tres.resolved}/{_tres.total} точек "
+                      f"с реальным рельефом — высоты могут быть неточны (оператор предупреждён в UI)")
+            else:
+                print(f"🟢 [ORCH] 🏔️ Terrain AGL applied ({len(mission.waypoints)} точек, "
+                      f"{_tres.resolved}/{_tres.total} рельеф)")
+            # Контроль клиренса вдоль трека: отрезок между точками не должен
+            # пройти сквозь холм. Поднимаем NAV/ORBIT-точки при нарушении.
+            mission.waypoints, _clr = await enforce_clearance(mission.waypoints, terrain_service)
+            terrain_meta["clearance"] = _clr
+            if _clr["lifted_waypoints"]:
+                print(f"🟠 [ORCH] ⛰️ Клиренс: поднято {_clr['lifted_waypoints']} точек "
+                      f"(макс +{_clr['max_lift_m']:.0f}м, мин клиренс {_clr['min_clearance_m']:.0f}м, "
+                      f"нарушений {_clr['violations']})")
+            if _clr["unresolved_violations"]:
+                print(f"🔴 [ORCH] ❗ {_clr['unresolved_violations']} неустранимых нарушений клиренса "
+                      f"(на TAKEOFF/LAND-отрезках) — оператор предупреждён")
+        except Exception as _te:
+            terrain_meta = {"resolved": 0, "total": len(mission.waypoints), "degraded": True,
+                            "source": "srtm30m", "error": str(_te)}
+            print(f"🟡 [ORCH] ⚠️ Terrain AGL failed, используем плоскую землю: {_te}")
+
         mission = await self.missions.create(mission)
         print(f"🟢 [ORCH] 💾 Миссия сохранена в репозитории: {mission.id}")
 
         print(f"🟡 [ORCH] Пытаюсь опубликовать mission/planned → {mission.id}")
-        await self._publish(f"mission/{mission.id}/planned", mission.model_dump())
+        _planned_payload = mission.model_dump()
+        if terrain_meta is not None:
+            _planned_payload["terrain"] = terrain_meta
+        await self._publish(f"mission/{mission.id}/planned", _planned_payload)
         print(f"🟢 [ORCH] MQTT → mission/planned опубликована")
 
         # === Этап 2: Назначение борта ===
