@@ -565,6 +565,32 @@ async def api_terrain_batch(body: Dict[str, Any]):
     }
 
 
+@app.get("/api/buildings")
+async def api_buildings(bbox: str):
+    """Контуры зданий + высоты из OSM в bbox='s,w,n,e' (для 3D-кубов).
+
+    Высота каскадом: тег height → этажи×3м → дефолт. Кэш по тайлам, лимит на
+    размер bbox (клиент шлёт только при достаточном зуме)."""
+    from drone_core.infra.buildings import building_service
+    try:
+        s, w, n, e = (float(x) for x in bbox.split(","))
+    except (ValueError, AttributeError):
+        return JSONResponse({"error": "bad_bbox"}, status_code=400)
+    res = await building_service.get_buildings(s, w, n, e)
+    if not res.ok:
+        code = 400 if res.error in ("bad_bbox", "bbox_too_large") else 503
+        return JSONResponse({"error": res.error, "buildings": []}, status_code=code)
+    return {
+        "buildings": [
+            {"outline": [list(p) for p in b.outline], "height_m": round(b.height_m, 1), "source": b.source}
+            for b in res.buildings
+        ],
+        "count": len(res.buildings),
+        "cached": res.cached,
+        "source": "osm",
+    }
+
+
 @app.get("/api/settings")
 async def api_settings():
     cfg = read_cfg()

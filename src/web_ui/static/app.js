@@ -111,6 +111,175 @@ viewer.scene.moon.show = false;
 viewer.scene.skyAtmosphere.show = false;
 viewer.scene.fog.enabled = false;
 
+// =================================================================
+// 3D ELEVATION LAYERS — buildings (OSM cubes) + terrain relief mesh.
+// Two independent toggles. Both are overlays over the flat globe, so the
+// 2D "doc-look" stays intact when they're off. Each lazy-loads for the
+// current view bbox and refreshes on camera moveEnd; zoom-gated so a far-out
+// view never fires a huge query.
+// =================================================================
+const _MAX_VIEW_DEG = 0.08;     // must match server bbox cap
+const _RELIEF_GRID = 22;        // NxN samples for the relief mesh
+const _RELIEF_EXAG = 2.5;       // vertical exaggeration (terrain relief is subtle)
+
+// Building colour ramp — stepped, by height in metres.
+function _bldgColor(h) {
+  if (h < 10) return Cesium.Color.fromCssColorString('#8ecae6');   // low
+  if (h < 25) return Cesium.Color.fromCssColorString('#52be80');
+  if (h < 50) return Cesium.Color.fromCssColorString('#f4d03f');
+  if (h < 100) return Cesium.Color.fromCssColorString('#e67e22');
+  return Cesium.Color.fromCssColorString('#c0392b');               // skyscraper
+}
+
+// Hypsometric ramp for terrain — green → tan → brown, normalised to view range.
+function _reliefColor(t) {
+  const stops = [
+    [0.0, [90, 138, 86]], [0.4, [160, 168, 92]],
+    [0.7, [173, 137, 92]], [1.0, [120, 90, 70]],
+  ];
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const [a, ca] = stops[i - 1], [b, cb] = stops[i];
+      const f = (t - a) / (b - a || 1);
+      const c = ca.map((v, k) => Math.round(v + (cb[k] - v) * f));
+      return Cesium.Color.fromBytes(c[0], c[1], c[2], 235);
+    }
+  }
+  return Cesium.Color.fromBytes(120, 90, 70, 235);
+}
+
+function _viewBboxDeg() {
+  const r = viewer.camera.computeViewRectangle();
+  if (!r) return null;
+  return {
+    s: Cesium.Math.toDegrees(r.south), w: Cesium.Math.toDegrees(r.west),
+    n: Cesium.Math.toDegrees(r.north), e: Cesium.Math.toDegrees(r.east),
+  };
+}
+function _bboxTooBig(bb) {
+  return !bb || (bb.n - bb.s) > _MAX_VIEW_DEG || (bb.e - bb.w) > _MAX_VIEW_DEG;
+}
+
+// ---- Buildings layer -------------------------------------------------------
+let _bldgActive = false;
+let _bldgPrimitive = null;
+let _bldgReqSeq = 0;
+function _clearBuildings() {
+  if (_bldgPrimitive) { viewer.scene.primitives.remove(_bldgPrimitive); _bldgPrimitive = null; }
+}
+async function _refreshBuildings() {
+  if (!_bldgActive) return;
+  const bb = _viewBboxDeg();
+  if (_bboxTooBig(bb)) { _clearBuildings(); setText('cur-elev', 'BLDG — приблизьте'); return; }
+  const seq = ++_bldgReqSeq;
+  let data;
+  try {
+    data = await (await fetch(`/api/buildings?bbox=${bb.s},${bb.w},${bb.n},${bb.e}`)).json();
+  } catch { return; }
+  if (seq !== _bldgReqSeq || !_bldgActive) return;   // stale response, ignore
+  if (!data || !Array.isArray(data.buildings)) return;
+  const instances = [];
+  for (const b of data.buildings) {
+    const flat = [];
+    for (const [lat, lon] of b.outline) flat.push(lon, lat);
+    if (flat.length < 6) continue;
+    instances.push(new Cesium.GeometryInstance({
+      geometry: new Cesium.PolygonGeometry({
+        polygonHierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
+        height: 0,
+        extrudedHeight: b.height_m,
+        vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT,
+      }),
+      attributes: { color: Cesium.ColorGeometryInstanceAttribute.fromColor(_bldgColor(b.height_m)) },
+    }));
+  }
+  _clearBuildings();
+  setText('cur-elev', `BLDG ×${data.count || 0}`);
+  if (!instances.length) return;
+  _bldgPrimitive = viewer.scene.primitives.add(new Cesium.Primitive({
+    geometryInstances: instances,
+    // flat: scene lighting is off, so use unlit pure colour — the building's
+    // conditional height-colour always shows regardless of camera/sun.
+    appearance: new Cesium.PerInstanceColorAppearance({ translucent: false, flat: true }),
+    asynchronous: true,
+  }));
+}
+
+// ---- Terrain relief mesh ---------------------------------------------------
+let _reliefActive = false;
+let _reliefPrimitive = null;
+let _reliefReqSeq = 0;
+function _clearRelief() {
+  if (_reliefPrimitive) { viewer.scene.primitives.remove(_reliefPrimitive); _reliefPrimitive = null; }
+}
+async function _refreshRelief() {
+  if (!_reliefActive) return;
+  const bb = _viewBboxDeg();
+  if (_bboxTooBig(bb)) { _clearRelief(); setText('cur-elev', 'MESH — приблизьте'); return; }
+  const seq = ++_reliefReqSeq;
+  const G = _RELIEF_GRID;
+  const locs = [];
+  for (let i = 0; i < G; i++) {
+    const lat = bb.s + (bb.n - bb.s) * (i / (G - 1));
+    for (let j = 0; j < G; j++) {
+      const lon = bb.w + (bb.e - bb.w) * (j / (G - 1));
+      locs.push([lat, lon]);
+    }
+  }
+  let data;
+  try {
+    data = await (await fetch('/api/terrain/batch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locations: locs }),
+    })).json();
+  } catch { return; }
+  if (seq !== _reliefReqSeq || !_reliefActive) return;
+  const el = data && data.elevations;
+  if (!Array.isArray(el) || el.length !== G * G) return;
+  let lo = Infinity, hi = -Infinity;
+  for (const v of el) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const span = (hi - lo) || 1;
+  const at = (i, j) => el[i * G + j];
+  const lla = (i, j) => {
+    const lat = bb.s + (bb.n - bb.s) * (i / (G - 1));
+    const lon = bb.w + (bb.e - bb.w) * (j / (G - 1));
+    return [lon, lat, (at(i, j) - lo) * _RELIEF_EXAG];
+  };
+  const instances = [];
+  for (let i = 0; i < G - 1; i++) {
+    for (let j = 0; j < G - 1; j++) {
+      const p1 = lla(i, j), p2 = lla(i, j + 1), p3 = lla(i + 1, j + 1), p4 = lla(i + 1, j);
+      const avg = (at(i, j) + at(i, j + 1) + at(i + 1, j + 1) + at(i + 1, j)) / 4;
+      instances.push(new Cesium.GeometryInstance({
+        geometry: new Cesium.PolygonGeometry({
+          polygonHierarchy: new Cesium.PolygonHierarchy(
+            Cesium.Cartesian3.fromDegreesArrayHeights([...p1, ...p2, ...p3, ...p4])),
+          perPositionHeight: true,
+          vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT,
+        }),
+        attributes: { color: Cesium.ColorGeometryInstanceAttribute.fromColor(_reliefColor((avg - lo) / span)) },
+      }));
+    }
+  }
+  _clearRelief();
+  setText('cur-elev', `MESH ${Math.round(lo)}–${Math.round(hi)}m`);
+  if (!instances.length) return;
+  _reliefPrimitive = viewer.scene.primitives.add(new Cesium.Primitive({
+    geometryInstances: instances,
+    appearance: new Cesium.PerInstanceColorAppearance({ translucent: false, flat: true }),
+    asynchronous: true,
+  }));
+}
+
+// Refresh active layers when the camera settles (debounced via Cesium moveEnd).
+let _layersMoveTimer = null;
+viewer.camera.moveEnd.addEventListener(() => {
+  if (!_bldgActive && !_reliefActive) return;
+  clearTimeout(_layersMoveTimer);
+  _layersMoveTimer = setTimeout(() => { _refreshBuildings(); _refreshRelief(); }, 250);
+});
+
 // Момент загрузки страницы — для UPTIME в шапке (T+ЧЧ:ММ сессии).
 const SESSION_START = Date.now();
 
@@ -587,6 +756,22 @@ function wireSettings() {
     _elevSource = use3dep ? '3dep' : 'srtm';
     // Immediately update the label in the cursor overlay if visible
     if (_elevModeActive) setText('cur-elev', `… m ${use3dep ? '3DEP' : 'SRTM'}`);
+  });
+
+  const bldgBtn = document.getElementById('dh-bldg-toggle');
+  if (bldgBtn) bldgBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    _bldgActive = !bldgBtn.classList.contains('active');
+    bldgBtn.classList.toggle('active', _bldgActive);
+    if (_bldgActive) _refreshBuildings(); else _clearBuildings();
+  });
+
+  const reliefBtn = document.getElementById('dh-relief-toggle');
+  if (reliefBtn) reliefBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    _reliefActive = !reliefBtn.classList.contains('active');
+    reliefBtn.classList.toggle('active', _reliefActive);
+    if (_reliefActive) _refreshRelief(); else _clearRelief();
   });
 
   // ── Drawer (минимальный — drawings list + Export/Reset) ────────
