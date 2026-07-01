@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -41,6 +42,7 @@ _MIN_INTERVAL_S = 1.1    # be polite to public Overpass
 _MAX_RETRIES = 3
 _TILE_DEG = 0.01         # cache granularity (~1.1 km) — snap bbox to this grid
 _MAX_BBOX_DEG = 0.08     # reject requests larger than this (~9 km) — zoom in first
+_CACHE_MAX_TILES = 600   # LRU cap on cached tiles — bounds RAM + disk JSON
 _DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 
 
@@ -94,8 +96,8 @@ def _parse_height(tags: Dict[str, str]) -> Tuple[float, str]:
 
 class BuildingService:
     def __init__(self, timeout_s: float = 30.0, cache_file: str = "buildings_cache.json") -> None:
-        # cache key = snapped tile string -> list of serialised buildings
-        self._cache: Dict[str, List[dict]] = {}
+        # cache key = snapped tile string -> list of serialised buildings (LRU)
+        self._cache: "OrderedDict[str, List[dict]]" = OrderedDict()
         self._timeout = timeout_s
         self._cache_path = _DATA_DIR / cache_file
         self._net_lock = asyncio.Lock()
@@ -103,15 +105,25 @@ class BuildingService:
         self._dirty = False
         self._load_disk_cache()
 
+    def _cache_put(self, key: str, tile: List[dict]) -> None:
+        """Insert with LRU eviction so the tile cache stays bounded."""
+        self._cache[key] = tile
+        self._cache.move_to_end(key)
+        self._dirty = True
+        while len(self._cache) > _CACHE_MAX_TILES:
+            self._cache.popitem(last=False)
+
     # --- disk cache ---------------------------------------------------------
     def _load_disk_cache(self) -> None:
         try:
             if self._cache_path.exists():
-                self._cache = json.loads(self._cache_path.read_text())
+                self._cache = OrderedDict(json.loads(self._cache_path.read_text()))
+                while len(self._cache) > _CACHE_MAX_TILES:
+                    self._cache.popitem(last=False)
                 log.info("[BUILDINGS] loaded %d cached tiles", len(self._cache))
         except Exception as exc:
             log.warning("[BUILDINGS] disk cache load failed: %s", exc)
-            self._cache = {}
+            self._cache = OrderedDict()
 
     def _save_disk_cache(self) -> None:
         if not self._dirty:
@@ -215,6 +227,7 @@ class BuildingService:
 
         key = self._tile_key(s, w, n, e)
         if key in self._cache:
+            self._cache.move_to_end(key)   # LRU touch
             raw = self._cache[key]
             buildings = [Building(outline=[tuple(p) for p in b["outline"]],
                                   height_m=b["height_m"], source=b["source"]) for b in raw]
@@ -229,11 +242,10 @@ class BuildingService:
             return BuildingResult(ok=False, error="overpass_unavailable")
 
         buildings = self._parse_elements(data)
-        self._cache[key] = [
+        self._cache_put(key, [
             {"outline": [list(p) for p in b.outline], "height_m": b.height_m, "source": b.source}
             for b in buildings
-        ]
-        self._dirty = True
+        ])
         self._save_disk_cache()
         log.info("[BUILDINGS] tile %s → %d buildings", key, len(buildings))
         return BuildingResult(buildings=buildings, cached=False)

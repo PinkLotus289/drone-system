@@ -26,6 +26,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -41,6 +42,8 @@ _CACHE_PREC = 4        # decimal places ≈ 11 m grid
 _MAX_BATCH = 100       # OpenTopoData public limit per request
 _MIN_INTERVAL_S = 1.1  # OpenTopoData free tier: 1 call/sec — stay just under
 _MAX_RETRIES = 3
+_SRTM_CACHE_MAX = 250_000  # LRU cap — bounds RAM + on-disk JSON (~1M points ≈ tens of MB)
+_3DEP_CACHE_MAX = 60_000
 _DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 
 
@@ -88,13 +91,27 @@ class TerrainResult:
 
 class TerrainService:
     def __init__(self, timeout_s: float = 10.0, cache_file: str = "terrain_srtm_cache.json") -> None:
-        self._cache: Dict[Tuple[float, float], float] = {}
+        self._cache: "OrderedDict[Tuple[float, float], float]" = OrderedDict()
         self._timeout = timeout_s
         self._cache_path = _DATA_DIR / cache_file
         self._net_lock = asyncio.Lock()   # serialises network calls → enforces rate limit
         self._last_fetch = 0.0            # monotonic ts of last network hit
         self._dirty = False
         self._load_disk_cache()
+
+    def _cache_put(self, key: Tuple[float, float], elev: float) -> None:
+        """Insert with LRU eviction so the cache (RAM + disk JSON) stays bounded."""
+        self._cache[key] = elev
+        self._cache.move_to_end(key)
+        self._dirty = True
+        while len(self._cache) > _SRTM_CACHE_MAX:
+            self._cache.popitem(last=False)   # drop least-recently-used
+
+    def _cache_get(self, key: Tuple[float, float]) -> Optional[float]:
+        if key in self._cache:
+            self._cache.move_to_end(key)
+            return self._cache[key]
+        return None
 
     # --- disk cache ---------------------------------------------------------
     def _load_disk_cache(self) -> None:
@@ -104,6 +121,9 @@ class TerrainService:
                 for k, v in raw.items():
                     lat_s, lon_s = k.split(",")
                     self._cache[(float(lat_s), float(lon_s))] = float(v)
+                # Trim if a previous version left an oversized file.
+                while len(self._cache) > _SRTM_CACHE_MAX:
+                    self._cache.popitem(last=False)
                 log.info("[TERRAIN/SRTM] loaded %d cached points from %s",
                          len(self._cache), self._cache_path)
         except Exception as exc:
@@ -186,8 +206,9 @@ class TerrainService:
 
         for i, (lat, lon) in enumerate(locations):
             key = self._key(lat, lon)
-            if key in self._cache:
-                resolved[i] = self._cache[key]
+            cached = self._cache_get(key)
+            if cached is not None:
+                resolved[i] = cached
             else:
                 to_fetch.append((i, lat, lon))
 
@@ -201,8 +222,7 @@ class TerrainService:
                 elev = elevs[j] if j < len(elevs) else None
                 if elev is None:
                     continue
-                self._cache[self._key(lat, lon)] = elev
-                self._dirty = True
+                self._cache_put(self._key(lat, lon), elev)
                 resolved[i] = elev
             log.info("[TERRAIN/SRTM] fetched %d points (cache %d)", len(batch), len(self._cache))
 
@@ -256,11 +276,18 @@ class TerrainService3DEP:
     """
 
     def __init__(self, timeout_s: float = 10.0, cache_file: str = "terrain_3dep_cache.json") -> None:
-        self._cache: Dict[Tuple[float, float], Optional[float]] = {}
+        self._cache: "OrderedDict[Tuple[float, float], Optional[float]]" = OrderedDict()
         self._timeout = timeout_s
         self._cache_path = _DATA_DIR / cache_file
         self._dirty = False
         self._load_disk_cache()
+
+    def _cache_put(self, key: Tuple[float, float], elev: Optional[float]) -> None:
+        self._cache[key] = elev
+        self._cache.move_to_end(key)
+        self._dirty = True
+        while len(self._cache) > _3DEP_CACHE_MAX:
+            self._cache.popitem(last=False)
 
     def _load_disk_cache(self) -> None:
         try:
@@ -269,6 +296,8 @@ class TerrainService3DEP:
                 for k, v in raw.items():
                     lat_s, lon_s = k.split(",")
                     self._cache[(float(lat_s), float(lon_s))] = (None if v is None else float(v))
+                while len(self._cache) > _3DEP_CACHE_MAX:
+                    self._cache.popitem(last=False)
                 log.info("[TERRAIN/3DEP] loaded %d cached points", len(self._cache))
         except Exception as exc:
             log.warning("[TERRAIN/3DEP] disk cache load failed: %s", exc)
@@ -309,13 +338,13 @@ class TerrainService3DEP:
         """Return surface elevation (m MSL) at (lat, lon), or None if unavailable."""
         key = self._key(lat, lon)
         if key in self._cache:
+            self._cache.move_to_end(key)
             return self._cache[key]
         loop = asyncio.get_running_loop()
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
                 elev = await loop.run_in_executor(None, self._fetch_sync, lat, lon)
-                self._cache[key] = elev
-                self._dirty = True
+                self._cache_put(key, elev)
                 self._save_disk_cache()
                 src = f"{elev:.1f} m" if elev is not None else "no data"
                 log.info("[TERRAIN/3DEP] (%.5f, %.5f) → %s", lat, lon, src)

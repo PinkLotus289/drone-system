@@ -93,7 +93,7 @@ function _elevFetch(lat, lon) {
     .then((data) => {
       const elev = data?.elevation;
       if (data?.available && elev != null) {
-        cache.set(k, elev);
+        _cacheSet(cache, k, elev, _CLIENT_ELEV_CACHE_MAX);
         setText('cur-elev', `${Math.round(elev)} m ${tag}`);
       } else {
         setText('cur-elev', is3dep ? '— 3DEP (USA only)' : '— SRTM n/a');
@@ -118,9 +118,23 @@ viewer.scene.fog.enabled = false;
 // current view bbox and refreshes on camera moveEnd; zoom-gated so a far-out
 // view never fires a huge query.
 // =================================================================
-const _MAX_VIEW_DEG = 0.08;     // must match server bbox cap
-const _RELIEF_GRID = 22;        // NxN samples for the relief mesh
-const _RELIEF_EXAG = 2.5;       // vertical exaggeration (terrain relief is subtle)
+const _MAX_VIEW_DEG = 0.08;        // buildings server bbox cap
+const _RELIEF_TILE_DEG = 0.02;     // fixed relief tile size (~2.2 km)
+const _RELIEF_SAMPLES = 12;        // NxN elevation samples per tile
+const _RELIEF_EXAG = 3.0;          // vertical exaggeration (relief is subtle)
+const _RELIEF_BAND_M = 8;          // contour band step (m) — top-down colour bands
+const _RELIEF_MAX_VISIBLE = 30;    // > this many tiles in view → too far, skip
+const _RELIEF_MAX_TILES = 48;      // LRU cap on loaded tile primitives
+const _CLIENT_ELEV_CACHE_MAX = 5000; // cap per-source cursor elevation cache
+
+// Fixed light direction (from NW, above) for baked hillshade.
+const _LIGHT = (() => { const n = Math.hypot(-1, 1, 1.1); return [-1 / n, 1 / n, 1.1 / n]; })();
+
+// Bounded Map insert (FIFO eviction) — keeps client caches from leaking.
+function _cacheSet(map, k, v, max) {
+  map.set(k, v);
+  if (map.size > max) map.delete(map.keys().next().value);
+}
 
 // Building colour ramp — stepped, by height in metres.
 function _bldgColor(h) {
@@ -131,22 +145,33 @@ function _bldgColor(h) {
   return Cesium.Color.fromCssColorString('#c0392b');               // skyscraper
 }
 
-// Hypsometric ramp for terrain — green → tan → brown, normalised to view range.
-function _reliefColor(t) {
+// Absolute hypsometric ramp (metres MSL): water → green → tan → brown → snow.
+function _hypso(elev) {
   const stops = [
-    [0.0, [90, 138, 86]], [0.4, [160, 168, 92]],
-    [0.7, [173, 137, 92]], [1.0, [120, 90, 70]],
+    [-50, [60, 90, 120]], [0, [70, 110, 72]], [150, [95, 140, 86]],
+    [350, [150, 160, 95]], [700, [172, 135, 92]], [1200, [135, 105, 85]],
+    [2500, [235, 235, 240]],
   ];
-  t = Math.max(0, Math.min(1, t));
+  let c = stops[stops.length - 1][1];
   for (let i = 1; i < stops.length; i++) {
-    if (t <= stops[i][0]) {
+    if (elev <= stops[i][0]) {
       const [a, ca] = stops[i - 1], [b, cb] = stops[i];
-      const f = (t - a) / (b - a || 1);
-      const c = ca.map((v, k) => Math.round(v + (cb[k] - v) * f));
-      return Cesium.Color.fromBytes(c[0], c[1], c[2], 235);
+      const f = (elev - a) / ((b - a) || 1);
+      c = ca.map((v, k) => v + (cb[k] - v) * f);
+      break;
     }
   }
-  return Cesium.Color.fromBytes(120, 90, 70, 235);
+  return c;
+}
+// Banded (contour-step) hypsometric colour × baked hillshade for one relief cell.
+function _reliefBandColor(elev, shade) {
+  const banded = Math.round(elev / _RELIEF_BAND_M) * _RELIEF_BAND_M;
+  const c = _hypso(banded);
+  const s = Math.max(0.5, Math.min(1.18, shade));
+  return Cesium.Color.fromBytes(
+    Math.min(255, Math.round(c[0] * s)),
+    Math.min(255, Math.round(c[1] * s)),
+    Math.min(255, Math.round(c[2] * s)), 240);
 }
 
 function _viewBboxDeg() {
@@ -206,26 +231,45 @@ async function _refreshBuildings() {
   }));
 }
 
-// ---- Terrain relief mesh ---------------------------------------------------
+// ---- Terrain relief mesh (tiled + cached) ----------------------------------
+// Fixed-grid tiles, each an independently-cached primitive. Panning loads only
+// the newly-revealed tiles and keeps the rest → no flicker/refetch. Neighbouring
+// tiles share edge samples (same SRTM points) so they join seamlessly. Far tiles
+// are evicted (LRU) to bound memory.
 let _reliefActive = false;
-let _reliefPrimitive = null;
-let _reliefReqSeq = 0;
+const _reliefTiles = new Map();   // "row_col" -> { prim, seen }
+const _reliefLoading = new Set();
+let _reliefDatum = null;          // shared vertical datum (m) so tiles line up
+let _reliefSeq = 0;               // bumped on toggle-off to cancel in-flight loads
+
 function _clearRelief() {
-  if (_reliefPrimitive) { viewer.scene.primitives.remove(_reliefPrimitive); _reliefPrimitive = null; }
+  for (const t of _reliefTiles.values()) viewer.scene.primitives.remove(t.prim);
+  _reliefTiles.clear();
+  _reliefLoading.clear();
+  _reliefDatum = null;
+  _reliefSeq++;
 }
-async function _refreshRelief() {
-  if (!_reliefActive) return;
-  const bb = _viewBboxDeg();
-  if (_bboxTooBig(bb)) { _clearRelief(); setText('cur-elev', 'MESH — приблизьте'); return; }
-  const seq = ++_reliefReqSeq;
-  const G = _RELIEF_GRID;
+
+function _reliefEvict() {
+  if (_reliefTiles.size <= _RELIEF_MAX_TILES) return;
+  const sorted = [..._reliefTiles.entries()].sort((a, b) => a[1].seen - b[1].seen);
+  while (_reliefTiles.size > _RELIEF_MAX_TILES && sorted.length) {
+    const [key, t] = sorted.shift();
+    viewer.scene.primitives.remove(t.prim);
+    _reliefTiles.delete(key);
+  }
+}
+
+async function _loadReliefTile(row, col, seq) {
+  const key = row + '_' + col;
+  if (_reliefTiles.has(key) || _reliefLoading.has(key)) return;
+  _reliefLoading.add(key);
+  const S = _RELIEF_SAMPLES, T = _RELIEF_TILE_DEG;
+  const latMin = row * T, lonMin = col * T;
   const locs = [];
-  for (let i = 0; i < G; i++) {
-    const lat = bb.s + (bb.n - bb.s) * (i / (G - 1));
-    for (let j = 0; j < G; j++) {
-      const lon = bb.w + (bb.e - bb.w) * (j / (G - 1));
-      locs.push([lat, lon]);
-    }
+  for (let i = 0; i < S; i++) {
+    const lat = latMin + T * (i / (S - 1));
+    for (let j = 0; j < S; j++) locs.push([lat, lonMin + T * (j / (S - 1))]);
   }
   let data;
   try {
@@ -233,24 +277,29 @@ async function _refreshRelief() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ locations: locs }),
     })).json();
-  } catch { return; }
-  if (seq !== _reliefReqSeq || !_reliefActive) return;
+  } catch { _reliefLoading.delete(key); return; }
+  _reliefLoading.delete(key);
+  if (seq !== _reliefSeq || !_reliefActive) return;   // cancelled while loading
   const el = data && data.elevations;
-  if (!Array.isArray(el) || el.length !== G * G) return;
-  let lo = Infinity, hi = -Infinity;
-  for (const v of el) { if (v < lo) lo = v; if (v > hi) hi = v; }
-  const span = (hi - lo) || 1;
-  const at = (i, j) => el[i * G + j];
-  const lla = (i, j) => {
-    const lat = bb.s + (bb.n - bb.s) * (i / (G - 1));
-    const lon = bb.w + (bb.e - bb.w) * (j / (G - 1));
-    return [lon, lat, (at(i, j) - lo) * _RELIEF_EXAG];
-  };
+  if (!Array.isArray(el) || el.length !== S * S) return;
+  const at = (i, j) => el[i * S + j];
+  if (_reliefDatum === null) { let lo = Infinity; for (const v of el) if (v < lo) lo = v; _reliefDatum = lo; }
+  const midLat = latMin + T * 0.5;
+  const dx = (T / (S - 1)) * 111320 * Math.cos(midLat * Math.PI / 180);
+  const dy = (T / (S - 1)) * 111320;
+  const lla = (i, j) => [lonMin + T * (j / (S - 1)), latMin + T * (i / (S - 1)),
+    (at(i, j) - _reliefDatum) * _RELIEF_EXAG];
   const instances = [];
-  for (let i = 0; i < G - 1; i++) {
-    for (let j = 0; j < G - 1; j++) {
+  for (let i = 0; i < S - 1; i++) {
+    for (let j = 0; j < S - 1; j++) {
       const p1 = lla(i, j), p2 = lla(i, j + 1), p3 = lla(i + 1, j + 1), p4 = lla(i + 1, j);
       const avg = (at(i, j) + at(i, j + 1) + at(i + 1, j + 1) + at(i + 1, j)) / 4;
+      // baked hillshade: cell normal (slope exaggerated) · fixed light
+      const dzdx = ((at(i, j + 1) + at(i + 1, j + 1)) - (at(i, j) + at(i + 1, j))) / 2 / dx * _RELIEF_EXAG;
+      const dzdy = ((at(i + 1, j) + at(i + 1, j + 1)) - (at(i, j) + at(i, j + 1))) / 2 / dy * _RELIEF_EXAG;
+      const nn = Math.hypot(-dzdx, -dzdy, 1) || 1;
+      const dot = (-dzdx * _LIGHT[0] + -dzdy * _LIGHT[1] + 1 * _LIGHT[2]) / nn;
+      const shade = 0.7 + 0.55 * Math.max(0, dot);
       instances.push(new Cesium.GeometryInstance({
         geometry: new Cesium.PolygonGeometry({
           polygonHierarchy: new Cesium.PolygonHierarchy(
@@ -258,18 +307,46 @@ async function _refreshRelief() {
           perPositionHeight: true,
           vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT,
         }),
-        attributes: { color: Cesium.ColorGeometryInstanceAttribute.fromColor(_reliefColor((avg - lo) / span)) },
+        attributes: { color: Cesium.ColorGeometryInstanceAttribute.fromColor(_reliefBandColor(avg, shade)) },
       }));
     }
   }
-  _clearRelief();
-  setText('cur-elev', `MESH ${Math.round(lo)}–${Math.round(hi)}m`);
-  if (!instances.length) return;
-  _reliefPrimitive = viewer.scene.primitives.add(new Cesium.Primitive({
+  if (seq !== _reliefSeq || !_reliefActive || !instances.length) return;
+  const prim = viewer.scene.primitives.add(new Cesium.Primitive({
     geometryInstances: instances,
     appearance: new Cesium.PerInstanceColorAppearance({ translucent: false, flat: true }),
     asynchronous: true,
   }));
+  _reliefTiles.set(key, { prim, seen: Date.now() });
+  _reliefEvict();
+}
+
+async function _refreshRelief() {
+  if (!_reliefActive) return;
+  const bb = _viewBboxDeg();
+  if (!bb) return;
+  const T = _RELIEF_TILE_DEG;
+  const rowMin = Math.floor(bb.s / T), rowMax = Math.floor(bb.n / T);
+  const colMin = Math.floor(bb.w / T), colMax = Math.floor(bb.e / T);
+  if ((rowMax - rowMin + 1) * (colMax - colMin + 1) > _RELIEF_MAX_VISIBLE) {
+    setText('cur-elev', 'MESH — приблизьте');
+    return;
+  }
+  const seq = _reliefSeq;
+  const wanted = [];
+  for (let r = rowMin; r <= rowMax; r++) {
+    for (let c = colMin; c <= colMax; c++) {
+      const key = r + '_' + c;
+      const t = _reliefTiles.get(key);
+      if (t) t.seen = Date.now(); else wanted.push([r, c]);
+    }
+  }
+  setText('cur-elev', `MESH · ${_reliefTiles.size} тайлов`);
+  // load newly-revealed tiles one at a time (they pop in; existing stay put)
+  for (const [r, c] of wanted) {
+    if (seq !== _reliefSeq || !_reliefActive) break;
+    await _loadReliefTile(r, c, seq);
+  }
 }
 
 // Refresh active layers when the camera settles (debounced via Cesium moveEnd).
