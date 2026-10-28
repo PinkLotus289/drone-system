@@ -1,0 +1,170 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": true,
+      "name": "Web Launcher: приложение + MQTT",
+      "program": "${workspaceFolder}/run_launcher.py",
+      "subProcess": true
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": true,
+      "name": "Web UI: FastAPI (отладка)",
+      "module": "uvicorn",
+      "args": [
+        "web_ui.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "subProcess": true
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": true,
+      "name": "Web UI: FastAPI (автоперезагрузка)",
+      "module": "uvicorn",
+      "args": [
+        "web_ui.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--reload",
+        "--reload-dir",
+        "src"
+      ],
+      "subProcess": true
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": true,
+      "name": "SIM: полный стек (legacy)",
+      "program": "${workspaceFolder}/run_system.py",
+      "subProcess": true
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": true,
+      "name": "Backend factory: run.py",
+      "program": "${workspaceFolder}/run.py",
+      "subProcess": true
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": true,
+      "name": "Worker: telemetry ingest",
+      "module": "drone_core.workers.telemetry_ingest"
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": true,
+      "name": "Worker: orchestrator",
+      "module": "drone_core.workers.orchestrator"
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": true,
+      "name": "Python: текущий файл",
+      "program": "${file}"
+    },
+    {
+      "name": "Python: отладка тестов",
+      "type": "debugpy",
+      "request": "launch",
+      "purpose": [
+        "debug-test"
+      ],
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env.dev",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  ]
+}

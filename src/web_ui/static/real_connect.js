@@ -460,6 +460,9 @@
       await radioLink.start({
         name, baud: baudVal || radioBaud, force: true,
         onStatus: (phase, detail) => {
+          // «Check it» активна только на реальном on air; иначе — гасим Шаг 4.
+          if (phase === "on-air") setCheckAvail(true);
+          else if (phase === "no-data" || phase === "stopped") setCheckAvail(false);
           if (phase === "warn") { setRadioStatus(detail, "warn"); return; }
           if (phase === "error") { setRadioStatus("error: " + detail, "bad"); return; }
           const m = phaseMap[phase];
@@ -479,6 +482,7 @@
     if (radioLink) { try { await radioLink.stop(); } catch { /* ignore */ } }
     radioActiveName = null;
     resetRadioButtons();
+    setCheckAvail(false);   // погасить «Check it» + Шаг 4
     setRadioStatus("idle", "");
     loadConnections();
   }
@@ -489,6 +493,176 @@
     // Профиль НЕ сохраняем — подключение работает с временным профилем на сервере
     // (имя = только ключ реле). Сохранение — отдельным действием по кнопке Save.
     await startRadio(data.name, radioBaud);
+  }
+
+  // ===== Pre-flight & arm (Step 4) =====
+  let pfTimer = null;
+  let pfState = "passed";        // passed | armed | flying
+  let pfFlyingSince = 0;
+
+  // Безопасно обновить строку статуса (элемент может отсутствовать — не роняем runPreflight).
+  const setMeta = (t) => { const m = $("pf-meta"); if (m) m.textContent = t; };
+
+  // "Check it" is available only when the link is truly on air.
+  function setCheckAvail(on) {
+    const b = $("btn-check");
+    if (b) b.disabled = !on;
+    if (!on) hideStep4();
+  }
+  function hideStep4() {
+    $("step4-wstep")?.classList.add("hidden");
+    if (pfTimer) { clearInterval(pfTimer); pfTimer = null; }
+    setPfState("passed");
+  }
+
+  // State machine — exactly one of arm-row / armed-block / flight-block is shown.
+  function setPfState(s) {
+    pfState = s;
+    $("pf-row-arm")?.classList.toggle("hidden", s !== "passed");
+    $("pf-armed-block")?.classList.toggle("hidden", s !== "armed");
+    $("pf-flight-block")?.classList.toggle("hidden", s !== "flying");
+    if (s === "flying") pfFlyingSince = Date.now();
+  }
+
+  async function onCheckClick() {
+    if (!radioActiveName) return;
+    $("step4-wstep")?.classList.remove("hidden");
+    await runPreflight();
+    if (pfTimer) clearInterval(pfTimer);
+    pfTimer = setInterval(runPreflight, 2000);   // live checklist + flight state
+    $("step4-wstep")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderPfChecks(list) {
+    const grid = $("pf-grid");
+    if (!grid) return;
+    grid.innerHTML = "";
+    (list || []).forEach((c) => {
+      const el = document.createElement("div");
+      el.className = `check ${c.status || "info"}`;
+      el.innerHTML = `<div class="check-label">${c.label}</div><div class="check-value">${c.value}</div>`;
+      grid.appendChild(el);
+    });
+  }
+
+  function setArmEnabled(on, hint) {
+    const b = $("btn-arm");
+    if (b) b.disabled = !on;
+    if (hint) $("arm-hint").textContent = hint;
+  }
+
+  async function runPreflight() {
+    const name = radioActiveName;
+    if (!name) return;
+    let r, j;
+    try {
+      r = await fetch(`/api/real/preflight/${encodeURIComponent(name)}`, { cache: "no-store" });
+      j = await r.json();
+    } catch (e) {
+      setMeta("request failed");
+      return;
+    }
+    if (!r.ok || (j && j.ok === false && j.error)) {
+      setMeta((j && (j.message || j.error)) || "no data");
+      const v = $("pf-verdict");
+      v.className = "pf-verdict bad";
+      v.textContent = "⛔ " + ((j && j.message) || "no telemetry yet");
+      if (pfState === "passed") setArmEnabled(false, "no telemetry");
+      return;
+    }
+    setMeta("checked just now · live");
+    renderPfChecks(j.checks);
+    const v = $("pf-verdict");
+    if (j.ok) {
+      v.className = "pf-verdict ok";
+      v.innerHTML = `✓ PASSED — ready to arm <span class="sub">all systems green</span>`;
+    } else {
+      v.className = "pf-verdict bad";
+      v.innerHTML = `⛔ BLOCKED — ${j.reasons.length} issue(s) <span class="sub">arming disabled until all checks pass</span>`;
+    }
+    if (pfState === "passed") {
+      setArmEnabled(j.ok, j.ok ? "ready — first arm with props OFF" : "blocked by pre-flight");
+      $("pf-override")?.classList.toggle("hidden", !!j.ok);
+    }
+
+    // --- flight state from telemetry: LAND must appear whenever airborne ---
+    if (j.in_air) {
+      if (pfState !== "flying") setPfState("flying");
+      const alt = (typeof j.alt === "number") ? j.alt : null;
+      $("pf-alt").textContent = alt != null ? `${alt.toFixed(1)} m` : "airborne";
+    } else if (pfState === "flying" && Date.now() - pfFlyingSince > 4000) {
+      // landed (grace so a brief poll gap doesn't bounce the UI). Real drone
+      // auto-disarms after landing → back to the pre-flight/arm view.
+      setPfState("passed");
+    }
+  }
+
+  // guided command with auto-acquire of control authority.
+  async function droneCommand(action, extra) {
+    const veh = "veh_" + radioActiveName;
+    const body = Object.assign({ action }, extra || {});
+    const send = () => fetch(`/api/drone/${encodeURIComponent(veh)}/command`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    let r = await send();
+    if (r.status === 403) {   // no control — take it and retry once
+      await fetch("/api/control/acquire", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "system" }),
+      });
+      r = await send();
+    }
+    return r.json().catch(() => ({}));
+  }
+
+  async function doArm(force) {
+    if (!radioActiveName) return;
+    setArmEnabled(false, "arming…");
+    await droneCommand("arm", force ? { force: true } : null);
+    setPfState("armed");
+  }
+
+  async function doMotorTest() {
+    setPfState("armed");
+    await droneCommand("motor_test");
+    // server spins the motors then auto-disarms — return to the arm view after.
+    setTimeout(() => { if (pfState === "armed") setPfState("passed"); }, 5000);
+  }
+
+  async function doTestHop() {
+    setPfState("flying");                 // LAND visible immediately — before it leaves the ground
+    $("pf-alt").textContent = "lifting…";
+    await droneCommand("test_hop");
+    // safety fallback: if telemetry never reports landing, don't strand the UI in flight view
+    setTimeout(() => { if (pfState === "flying" && Date.now() - pfFlyingSince > 28000) setPfState("passed"); }, 30000);
+  }
+
+  async function doDisarm() {
+    await droneCommand("disarm");
+    setPfState("passed");
+    runPreflight();
+  }
+
+  // ---- modals ----
+  function openModal(id) {
+    const m = $(id);
+    if (!m) return;
+    m.querySelectorAll('input[type=checkbox]').forEach((c) => (c.checked = false));
+    m.querySelectorAll('.pf-modal-foot .btn-primary').forEach((b) => { if (b.id.startsWith("confirm-")) b.disabled = true; });
+    m.classList.remove("hidden");
+  }
+  function closeModals() { document.querySelectorAll(".pf-overlay").forEach((o) => o.classList.add("hidden")); }
+  function wireModalGate(modalId, confirmId) {
+    const modal = $(modalId), btn = $(confirmId);
+    if (!modal || !btn) return;
+    const boxes = [...modal.querySelectorAll('input[type=checkbox]')];
+    const upd = () => { btn.disabled = !boxes.every((b) => b.checked); };
+    boxes.forEach((b) => b.addEventListener("change", upd));
+  }
+  function setGuideLang(l) {
+    document.querySelectorAll('.pf-lang button').forEach((b) => b.classList.toggle("on", b.dataset.lang === l));
+    $("guide-en")?.classList.toggle("hidden", l !== "en");
+    $("guide-ru")?.classList.toggle("hidden", l !== "ru");
   }
 
   async function onRadioAutodetect() {
@@ -680,6 +854,34 @@
     btn.addEventListener("click", () => setRadioBaud(btn.dataset.rbaud)));
   $("btn-radio-connect")?.addEventListener("click", onRadioConnectClick);
   $("btn-radio-disconnect")?.addEventListener("click", stopRadio);
+
+  // Pre-flight & arm (Step 4)
+  $("btn-check")?.addEventListener("click", onCheckClick);
+  $("btn-guide")?.addEventListener("click", () => openModal("modal-guide"));
+
+  // open confirmation modals
+  $("btn-arm")?.addEventListener("click", () => openModal("modal-arm"));
+  $("btn-motor-test")?.addEventListener("click", () => openModal("modal-motor"));
+  $("btn-test-hop")?.addEventListener("click", () => openModal("modal-hop"));
+  $("btn-force-arm")?.addEventListener("click", () => doArm(true));   // expert override (already blocked)
+
+  // confirm actions
+  $("confirm-arm")?.addEventListener("click", () => { closeModals(); doArm(false); });
+  $("confirm-motor")?.addEventListener("click", () => { closeModals(); doMotorTest(); });
+  $("confirm-hop")?.addEventListener("click", () => { closeModals(); doTestHop(); });
+
+  // in-flight + disarm
+  $("btn-land")?.addEventListener("click", () => droneCommand("land"));
+  $("btn-rtl")?.addEventListener("click", () => droneCommand("rtl"));
+  $("btn-disarm")?.addEventListener("click", doDisarm);
+
+  // modal plumbing: checkbox gating, close buttons, lang toggle, click-outside
+  wireModalGate("modal-arm", "confirm-arm");
+  wireModalGate("modal-motor", "confirm-motor");
+  wireModalGate("modal-hop", "confirm-hop");
+  document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", closeModals));
+  document.querySelectorAll(".pf-lang button").forEach((b) => b.addEventListener("click", () => setGuideLang(b.dataset.lang)));
+  document.querySelectorAll(".pf-overlay").forEach((o) => o.addEventListener("click", (e) => { if (e.target === o) closeModals(); }));
 
   // Живая валидация: поле имени принимает только разрешённые символы, а ошибки
   // под полями гаснут по мере исправления (серверных ошибок ввода больше нет).

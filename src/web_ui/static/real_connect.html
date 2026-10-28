@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="/static/launcher.css?v=5" />
-  <link rel="stylesheet" href="/static/real_connect.css?v=13" />
+  <link rel="stylesheet" href="/static/real_connect.css?v=15" />
 </head>
 <body class="launcher-body">
 
@@ -142,14 +142,15 @@
             <!-- Radio actions -->
             <div id="act-radio">
               <div class="connect-row">
-                <button type="button" class="btn btn-primary btn-lg" id="btn-radio-connect">Select port and connect</button>
-                <button type="button" class="btn btn-ghost hidden" id="btn-radio-disconnect">Disconnect</button>
+                <button type="button" class="btn btn-primary btn-lg" id="btn-radio-connect" style="flex:1">Select port and connect</button>
+                <button type="button" class="btn btn-ghost hidden" id="btn-radio-disconnect" style="flex:1">Disconnect</button>
+                <button type="button" class="btn btn-lg" id="btn-check" style="flex:1" disabled>Check it</button>
               </div>
               <div class="status-line">
                 <span class="radio-dot" id="radio-dot"></span>
                 <span class="mono small" id="radio-status">idle</span>
               </div>
-              <p class="hint">Plug the ground radio into USB and press “Select port and connect” — the browser will ask which device to use. Keep this tab open during the flight.</p>
+              <p class="hint">Plug the ground radio into USB and press “Select port and connect”. When the link is <b>on air</b>, press “Check it” to run the pre-flight.</p>
             </div>
 
             <!-- UDP / TCP actions -->
@@ -180,12 +181,145 @@
         </div>
       </div>
 
+      <!-- STEP 4 — Pre-flight & arm (appears after "Check it") -->
+      <div class="wstep hidden" id="step4-wstep">
+        <div class="wstep-num">4</div>
+        <div class="panel accent-green wstep-card">
+          <div class="p-head">
+            <span class="p-t">Pre-flight &amp; arm</span>
+            <span style="display:flex;align-items:center;gap:12px">
+              <span class="p-sub" id="pf-meta">—</span>
+              <button type="button" class="guide-btn" id="btn-guide">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V5l7-3z"/></svg>
+                Safe takeoff guide
+              </button>
+            </span>
+          </div>
+          <div class="p-body">
+
+            <div class="pf-verdict" id="pf-verdict">running…</div>
+            <div class="check-grid" id="pf-grid"></div>
+
+            <!-- arm row -->
+            <div class="connect-row" id="pf-row-arm" style="margin-top:16px">
+              <button type="button" class="btn btn-primary btn-lg" id="btn-arm" disabled>Arm</button>
+              <span class="mono small" id="arm-hint">waiting for pre-flight…</span>
+            </div>
+            <div class="pf-override hidden" id="pf-override">
+              blocked — expert override (logged): <a id="btn-force-arm">force-arm despite warnings</a>
+            </div>
+
+            <!-- armed on the ground: motor test + test hop -->
+            <div class="hidden" id="pf-armed-block">
+              <div class="btn-row" style="margin-bottom:4px">
+                <span class="pf-armed-badge">● Armed · motors live</span>
+                <button type="button" class="btn" id="btn-disarm">Disarm</button>
+              </div>
+              <div class="pf-actions">
+                <div class="pf-a-t">1 · Motor test <span class="mono small pf-dim">— props OFF</span></div>
+                <div class="pf-a-d">Spins the motors briefly and disarms. Check spin direction &amp; order against the airframe diagram before you ever put props on.</div>
+                <button type="button" class="btn btn-lg" id="btn-motor-test">▸ Spin motors &amp; disarm</button>
+              </div>
+              <div class="pf-actions">
+                <div class="pf-a-t">2 · Test hop <span class="mono small pf-dim">— props ON, outdoors</span></div>
+                <div class="pf-a-d">Takes off to ~0.5 m, holds, lands. Auto-lands if it climbs past 1.5 m or after timeout. Only after the motor test is clean and you're on open ground.</div>
+                <button type="button" class="btn btn-primary btn-lg" id="btn-test-hop">▲ Run test hop (0.5 m → land)</button>
+              </div>
+            </div>
+
+            <!-- in flight: LAND must be impossible to miss -->
+            <div class="hidden" id="pf-flight-block">
+              <div class="flight-banner"><span class="fb-dot"></span> In flight · <span id="pf-alt">—</span> — keep your hand here</div>
+              <button type="button" class="btn-land" id="btn-land">■ Land now</button>
+              <div class="btn-row" style="margin-top:10px">
+                <button type="button" class="btn" id="btn-rtl">Return home (RTL)</button>
+                <span class="mono small pf-dim">Disarm works on the ground only — use Land in the air</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
     </form>
 
   </section>
 </main>
 
+<!-- ===== Arm confirmation ===== -->
+<div class="pf-overlay hidden" id="modal-arm">
+  <div class="pf-modal">
+    <div class="pf-modal-head"><span class="pf-modal-title">Arm the drone?</span><button class="pf-modal-x" data-close>×</button></div>
+    <div class="pf-modal-body">
+      <p class="small pf-dim" style="margin-bottom:12px">Arming spins the motors. For the first arm on a new build, do it with propellers removed.</p>
+      <label class="pf-chk"><input type="checkbox"> Nobody is within reach of the props</label>
+      <label class="pf-chk"><input type="checkbox"> I'm standing clear, off to the side</label>
+    </div>
+    <div class="pf-modal-foot"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="confirm-arm" disabled>Arm</button></div>
+  </div>
+</div>
+
+<!-- ===== Motor test confirmation ===== -->
+<div class="pf-overlay hidden" id="modal-motor">
+  <div class="pf-modal">
+    <div class="pf-modal-head"><span class="pf-modal-title">Motor test?</span><button class="pf-modal-x" data-close>×</button></div>
+    <div class="pf-modal-body">
+      <p class="small pf-dim" style="margin-bottom:12px">The motors will spin, then the drone disarms on its own. This is a bench check, not a flight.</p>
+      <label class="pf-chk"><input type="checkbox"> Propellers are removed</label>
+      <label class="pf-chk"><input type="checkbox"> Drone is held down / can't move</label>
+    </div>
+    <div class="pf-modal-foot"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="confirm-motor" disabled>Spin motors</button></div>
+  </div>
+</div>
+
+<!-- ===== Test hop confirmation (stronger) ===== -->
+<div class="pf-overlay hidden" id="modal-hop">
+  <div class="pf-modal danger">
+    <div class="pf-modal-head"><span class="pf-modal-title">Run test hop?</span><button class="pf-modal-x" data-close>×</button></div>
+    <div class="pf-modal-body">
+      <div class="pf-warn">The drone will lift off to ~0.5 m and land. It flies on its own — keep your hand on Land.</div>
+      <label class="pf-chk"><input type="checkbox"> Propellers on, tight, rotation checked</label>
+      <label class="pf-chk"><input type="checkbox"> Open ground — 10 m clear, not over people or cars</label>
+      <label class="pf-chk"><input type="checkbox"> GPS fix good, pre-flight PASSED (not forced)</label>
+      <label class="pf-chk"><input type="checkbox"> Hand on Land · RC backup on and ready</label>
+    </div>
+    <div class="pf-modal-foot"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="confirm-hop" disabled>Run test hop</button></div>
+  </div>
+</div>
+
+<!-- ===== Safe takeoff guide (bilingual) ===== -->
+<div class="pf-overlay hidden" id="modal-guide">
+  <div class="pf-modal">
+    <div class="pf-modal-head">
+      <span class="pf-modal-title">Safe takeoff — before you fly</span>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="pf-lang"><button class="on" data-lang="en">EN</button><button data-lang="ru">RU</button></div>
+        <button class="pf-modal-x" data-close>×</button>
+      </div>
+    </div>
+    <div class="pf-modal-body">
+      <div class="pf-guide" id="guide-en">
+        <p class="lead">Two minutes here saves a drone — or a finger. Read it before the first takeoff.</p>
+        <p>First arm with the props <b>off</b>. Every time you touch a new build. Arm it, watch each motor spin up, check the direction and order against the airframe diagram, then disarm. If a motor turns the wrong way, or the wrong one moves — stop. That's a wiring problem, not a flight.</p>
+        <p>Props back on, go outside. Open ground, nothing and no one within ten meters, never over people or cars. Stand back five meters and off to the side — never in the plane of the props.</p>
+        <p>Battery in, QGroundControl closed (it holds the port), radio green, status on air. Hit <b>Check it</b> and get a green <b>PASSED</b> — a real GPS fix, home set. If it won't pass, don't force it. The gate is there for a reason.</p>
+        <p>Arm, let it settle a second, then hop. Thumb on <b>Land</b>, not Disarm — Disarm won't drop it out of the air anyway, Land is what brings it down. If it leans, drifts, or climbs more than you like — Land, right now. Got an RC transmitter? Keep it on and in your hands. That's your real backup.</p>
+        <p>No wind, no indoors, no build you haven't run on the bench. When in doubt, put it down.</p>
+      </div>
+      <div class="pf-guide hidden" id="guide-ru">
+        <p class="lead">Две минуты здесь — и дрон цел (и пальцы тоже). Прочти перед первым взлётом.</p>
+        <p>Сначала армимся <b>без винтов</b>. Каждый раз на новой сборке. Заармил, посмотрел, как раскручивается каждый мотор, сверил направление и порядок со схемой рамы — и разоружил. Мотор крутится не туда или дёргается не тот — стоп. Это косяк проводки, а не полёт.</p>
+        <p>Ставим винты, выходим на улицу. Открытое место, в радиусе десяти метров пусто, никогда над людьми и машинами. Отойди на пять метров и встань сбоку — не в плоскости винтов.</p>
+        <p>Батарея на месте, QGroundControl закрыт (он держит порт), радио зелёное, статус on air. Жмёшь <b>Check it</b> — нужен зелёный <b>PASSED</b>, живой GPS-фикс, home задан. Не проходит — не продавливай через force. Гейт стоит не просто так.</p>
+        <p>Заармил, дал секунду устояться, потом hop. Палец на <b>Land</b>, не на Disarm — Disarm в воздухе всё равно не сработает, сажает именно Land. Кренит, тянет вбок, лезет выше, чем хочется — Land, сразу. Есть пульт — держи включённым и в руках. Вот это твоя настоящая страховка.</p>
+        <p>Без ветра, не в помещении, и не на сборке, которую не гонял на столе. Сомневаешься — сажай.</p>
+      </div>
+    </div>
+    <div class="pf-modal-foot"><button class="btn btn-primary" data-close>Got it</button></div>
+  </div>
+</div>
+
 <script src="/static/radio_link.js?v=4"></script>
-<script src="/static/real_connect.js?v=18"></script>
+<script src="/static/real_connect.js?v=21"></script>
 </body>
 </html>

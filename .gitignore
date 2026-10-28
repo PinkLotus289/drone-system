@@ -12,6 +12,10 @@ __pycache__/
 .venv/
 venv/
 env/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # ─── PX4 SITL (собирается локально, ~гигабайты) ───
 PX4-Autopilot/
@@ -29,4 +33,8 @@ data/
 
 # ─── IDE ───
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json

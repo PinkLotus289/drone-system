@@ -19,6 +19,10 @@ from .launcher import router as launcher_router
 from .real import router as real_router
 from . import auth as authmod
 from .control import ControlAuthority
+from drone_core.utils import logging as skylog
+
+# Логи веб-процесса (включая radio-реле, preflight, команды) → stdout + web.log.
+skylog.setup(name="web")
 
 # --- пути и настройки ---
 APP_ROOT = Path(__file__).parents[1]
@@ -172,14 +176,18 @@ async def _startup():
             msg["type"] = "drone_active"
             d = data if isinstance(data, dict) else {}
             drone_id = d.get("id", f"drone_{len(app.state.active_drones)}")
-            app.state.active_drones[drone_id] = {
+            # MERGE, а не replace: fleet/active приходит ~1 Гц и раньше затирал
+            # весь объект, снося health/gps/battery, которые кладут телем-потоки
+            # (их читает /api/real/preflight). Обновляем только свои поля.
+            entry = app.state.active_drones.setdefault(drone_id, {"id": drone_id})
+            entry.update({
                 "id": drone_id,
                 "name": d.get("name", drone_id),
                 "lat": d.get("lat"),
                 "lon": d.get("lon"),
                 "alt": d.get("alt", 0),
                 "status": d.get("status", "IDLE"),
-            }
+            })
 
         elif topic.startswith("telem/"):
             msg["type"] = "telemetry_update"
@@ -235,6 +243,17 @@ async def _startup():
                 elif stream == "actuators":
                     d["motors"] = data.get("motors")
                     d["motors_active"] = data.get("active")
+                elif stream == "health":
+                    # health-флаги для pre-flight чек-листа (см. /api/real/preflight)
+                    d["health"] = {
+                        "gyro_ok": data.get("gyro_ok"),
+                        "accel_ok": data.get("accel_ok"),
+                        "mag_ok": data.get("mag_ok"),
+                        "local_pos_ok": data.get("local_pos_ok"),
+                        "global_pos_ok": data.get("global_pos_ok"),
+                        "home_ok": data.get("home_ok"),
+                        "armable": data.get("armable"),
+                    }
 
         elif topic.endswith("/planned"):
             msg["type"] = "mission_planned"
@@ -393,7 +412,7 @@ async def api_control_takeover(request: Request, body: Optional[Dict[str, Any]] 
 
 
 # === Ручное управление дроном (guided) — под арбитражем ===
-_MANUAL_ACTIONS = {"arm", "disarm", "takeoff", "land", "rtl", "goto", "hold"}
+_MANUAL_ACTIONS = {"arm", "disarm", "takeoff", "land", "rtl", "goto", "hold", "test_hop", "motor_test"}
 
 
 @app.post("/api/drone/{veh_id}/command")
@@ -428,10 +447,45 @@ async def api_drone_command(veh_id: str, body: Dict[str, Any], request: Request)
     else:
         topic = f"cmd/{veh}/{action}"
         payload = {}
+        # arm / test_hop могут нести осознанный обход pre-flight гейта.
+        if action in ("arm", "test_hop") and bool((body or {}).get("force")):
+            payload["force"] = True
 
     bus.publish(topic, payload, qos=1)
-    print(f"[MANUAL] {a.get('op')} → {topic} {payload}")
+    import logging
+    logging.getLogger("command").info(f"[MANUAL] {a.get('op')} → {topic} {payload}")
     return {"ok": True, "veh": veh, "action": action}
+
+
+@app.get("/api/real/preflight/{name}")
+async def api_real_preflight(name: str, request: Request):
+    """Pre-flight чек-лист подключённого борта: считает pass/fail по кэшу
+    телеметрии (health/gps/battery) через общий drone_core.preflight.evaluate —
+    тот же расчёт, что использует жёсткий гейт арминга в мосте."""
+    from drone_core import preflight
+
+    veh = name if str(name).startswith("veh_") else f"veh_{name}"
+    d = app.state.active_drones.get(veh) or app.state.active_drones.get(name)
+    if not d:
+        return JSONResponse(
+            {"ok": False, "error": "no_telemetry",
+             "message": "Нет телеметрии от борта — подключись и дождись on air."},
+            status_code=404,
+        )
+    gps = {"satellites": d.get("sat_count"), "fix_type": d.get("fix_type")}
+    battery = {"pct": d.get("battery_pct"), "voltage_v": d.get("battery_v")}
+    result = preflight.evaluate(d.get("health"), gps, battery)
+    result["veh"] = veh
+    # статус борта (для полётного состояния UI: FLYING → показать LAND)
+    result["status"] = d.get("status")
+    result["in_air"] = str(d.get("status") or "").upper() == "FLYING"
+    result["alt"] = d.get("alt")
+    import logging
+    logging.getLogger("preflight").info(
+        "[%s] %s | reasons=%s | health=%s gps=%s batt=%s",
+        veh, result["verdict"], result["reasons"], d.get("health"), gps, battery,
+    )
+    return result
 
 
 # === Маршруты API ===

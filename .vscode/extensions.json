@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.debugpy",
+    "openai.chatgpt",
+    "charliermarsh.ruff",
+    "ms-azuretools.vscode-containers",
+    "ms-vscode-remote.remote-ssh",
+    "qwtel.sqlite-viewer"
+  ]
+}

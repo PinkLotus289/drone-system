@@ -18,8 +18,14 @@ TCP-сервер на 127.0.0.1:<port>, к которому цепляется �
 """
 from __future__ import annotations
 import asyncio
+import logging
 import time
 from typing import Any, Dict, Optional, Set
+
+# Диагностический логгер радио-канала — попадает в web.log (и journald).
+# По нему разбираем: подключился ли браузер-агент, идут ли байты от борта,
+# цепляется ли MAVSDK-мост к реле.
+log = logging.getLogger("radio")
 
 # Диапазон локальных TCP-портов реле — выше gRPC mavsdk_server'ов
 # (sim 50151+, тесты 50191+, real-bridge 50230+), чтобы не конфликтовать.
@@ -46,7 +52,7 @@ class RadioRelay:
         self._server = await asyncio.start_server(
             self._on_tcp_client, host="127.0.0.1", port=self.tcp_port
         )
-        print(f"[radio] relay '{self.name}' listening tcp://127.0.0.1:{self.tcp_port}")
+        log.info(f"[radio] relay '{self.name}' listening tcp://127.0.0.1:{self.tcp_port}")
 
     async def stop(self) -> None:
         # Закрываем агентский WS, TCP-клиентов и сам сервер.
@@ -70,13 +76,14 @@ class RadioRelay:
             except Exception:
                 pass
             self._server = None
-        print(f"[radio] relay '{self.name}' stopped")
+        log.info(f"[radio] relay '{self.name}' stopped "
+                 f"(rx {self.bytes_from_drone}B to drone, {self.bytes_to_drone}B from drone)")
 
     # ---- TCP side (MAVSDK bridge) ----------------------------------
     async def _on_tcp_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")
         self._tcp_writers.add(writer)
-        print(f"[radio] '{self.name}' MAVSDK client connected {peer} ({len(self._tcp_writers)} total)")
+        log.info(f"[radio] '{self.name}' MAVSDK-мост подключился к реле {peer} ({len(self._tcp_writers)} total)")
         try:
             while True:
                 data = await reader.read(4096)
@@ -87,7 +94,7 @@ class RadioRelay:
         except (asyncio.CancelledError, ConnectionError):
             pass
         except Exception as e:
-            print(f"[radio] '{self.name}' tcp read error: {e}")
+            log.warning(f"[radio] '{self.name}' tcp read error: {e}")
         finally:
             self._tcp_writers.discard(writer)
             try:
@@ -99,8 +106,15 @@ class RadioRelay:
         """Байты из браузера (от борта) → всем подключённым MAVSDK-клиентам."""
         if not data:
             return
+        first = self.bytes_to_drone == 0
+        prev_k = self.bytes_to_drone // 51200  # засечка каждые ~50 КБ
         self.bytes_to_drone += len(data)
         self.last_rx = time.time()
+        if first:
+            log.info(f"[radio] '{self.name}' 📡 первые байты ОТ БОРТА (связь есть, {len(data)}B)")
+        elif self.bytes_to_drone // 51200 != prev_k:
+            log.info(f"[radio] '{self.name}' от борта суммарно {self.bytes_to_drone // 1024} КБ "
+                     f"(мостов подключено: {len(self._tcp_writers)})")
         dead = []
         for w in list(self._tcp_writers):
             try:
@@ -131,12 +145,16 @@ class RadioRelay:
         prev = self._agent if self._agent is not ws else None
         self._agent = ws
         self._agent_since = time.time()
+        log.info(f"[radio] '{self.name}' 🌐 браузер-агент подключён"
+                 + (" (заменил прежний)" if prev is not None else ""))
         return prev
 
     def clear_agent(self, ws: Any) -> None:
         if self._agent is ws:
             self._agent = None
             self._agent_since = None
+            log.info(f"[radio] '{self.name}' 🌐 браузер-агент отключён "
+                     f"(байт от борта: {self.bytes_to_drone})")
 
     @property
     def agent_connected(self) -> bool:

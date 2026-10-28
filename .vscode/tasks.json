@@ -1,0 +1,215 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev: проверить окружение",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "scripts/check_dev.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "dev: установить зависимости",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        "requirements-dev.txt"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "test: unit",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "-m",
+        "pytest"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "lint: Ruff",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "-m",
+        "ruff",
+        "check",
+        "src",
+        "tests",
+        "scripts",
+        "run.py",
+        "run_launcher.py",
+        "run_system.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "format: проверить Python",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "src",
+        "tests",
+        "scripts",
+        "run.py",
+        "run_launcher.py",
+        "run_system.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run: Web Launcher",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "run_launcher.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "infra: Docker MQTT + Postgres",
+      "type": "process",
+      "command": "docker",
+      "args": [
+        "compose",
+        "up",
+        "-d",
+        "mosquitto",
+        "postgres"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "infra: состояние Docker",
+      "type": "process",
+      "command": "docker",
+      "args": [
+        "compose",
+        "ps"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "infra: остановить Docker",
+      "type": "process",
+      "command": "docker",
+      "args": [
+        "compose",
+        "stop"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "infra: MQTT локально",
+      "type": "process",
+      "command": "mosquitto",
+      "args": [
+        "-v"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src",
+          "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    }
+  ]
+}

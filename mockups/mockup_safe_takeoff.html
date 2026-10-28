@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Skybite · Safe arm &amp; test takeoff — MOCKUP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<!-- Real site styles (pulled from the server so the mockup is 1:1) -->
+<link rel="stylesheet" href="https://drone-system.net/static/launcher.css?v=5" />
+<link rel="stylesheet" href="https://drone-system.net/static/real_connect.css?v=14" />
+<style>
+  /* mockup scaffold only — NOT part of the real page */
+  .mockbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#fff;border:1px dashed var(--amber);margin:14px 28px 0}
+  .mockbar .lbl{font:700 9px 'IBM Plex Sans';letter-spacing:.18em;text-transform:uppercase;color:var(--amber)}
+  .mockbar button{font:700 10px 'IBM Plex Mono';padding:6px 10px;border:1px solid var(--rule);background:var(--paper);cursor:pointer;text-transform:uppercase;letter-spacing:.06em}
+  .mockbar button.on{background:var(--ink-0);color:#fff;border-color:var(--ink-0)}
+
+  /* verdict + safety strip reuse theme tokens */
+  .pf-verdict{font:700 11px 'IBM Plex Mono';letter-spacing:.04em;padding:10px 12px;margin-bottom:14px;border:1px solid var(--rule);color:var(--ink-2);display:flex;align-items:center;gap:8px}
+  .pf-verdict.ok{border-color:var(--green);background:var(--green-soft);color:var(--green)}
+  .pf-verdict.bad{border-color:var(--red);background:var(--red-soft);color:var(--red)}
+  .pf-verdict .sub{margin-left:auto;font-weight:500;color:var(--ink-3)}
+
+  /* guide button in the panel header */
+  .guide-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);background:var(--paper);
+    color:var(--ink-1);font:700 10px 'IBM Plex Sans';letter-spacing:.08em;text-transform:uppercase;padding:5px 10px;cursor:pointer}
+  .guide-btn:hover{border-color:var(--ink-0);color:var(--ink-0)}
+  .guide-btn svg{width:13px;height:13px}
+
+  .pf-armed-badge{font:700 10px 'IBM Plex Mono';letter-spacing:.14em;text-transform:uppercase;color:var(--amber);border:1px solid var(--amber);background:var(--amber-soft);padding:8px 12px}
+  .pf-override{margin-top:12px;font:500 11px 'IBM Plex Mono';color:var(--ink-3)}
+  .pf-override a{color:var(--amber);cursor:pointer;text-decoration:underline}
+
+  .actions-block{border:1px dashed var(--rule);padding:14px;margin-top:14px}
+  .actions-block .ab-t{font:700 10px 'IBM Plex Sans';letter-spacing:.16em;text-transform:uppercase;color:var(--ink-0)}
+  .actions-block .ab-d{color:var(--ink-2);font-size:12.5px;margin:4px 0 12px}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(10,14,20,.45);display:flex;align-items:center;justify-content:center;z-index:50}
+  .overlay.hide{display:none}
+  .modal{background:var(--paper);border:1px solid var(--ink-0);max-width:560px;width:calc(100% - 40px);max-height:86vh;overflow:auto;box-shadow:var(--shadow-lg)}
+  .modal::before{content:'';display:block;height:4px;background:var(--amber)}
+  .modal.danger::before{background:var(--red)}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--hairline)}
+  .modal-title{font:700 13px 'IBM Plex Sans';letter-spacing:.02em;color:var(--ink-0)}
+  .modal-x{border:0;background:transparent;font-size:20px;line-height:1;color:var(--ink-3);cursor:pointer}
+  .modal-body{padding:16px 18px}
+  .modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:12px 18px;border-top:1px solid var(--hairline)}
+  .chk{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;font-size:13px;color:var(--ink-1)}
+  .chk input{margin-top:2px}
+  .warn-line{background:var(--red-soft);border:1px solid var(--red);color:var(--red);font:600 12px 'IBM Plex Mono';padding:8px 10px;margin-bottom:12px}
+
+  /* guide modal */
+  .lang-seg{display:inline-flex;border:1px solid var(--rule);overflow:hidden}
+  .lang-seg button{border:0;background:var(--paper);color:var(--ink-2);font:700 10px 'IBM Plex Sans';letter-spacing:.1em;padding:5px 12px;cursor:pointer;border-right:1px solid var(--rule)}
+  .lang-seg button:last-child{border-right:0}
+  .lang-seg button.on{background:var(--ink-0);color:#fff}
+  .guide-text{font:400 13.5px/1.62 'IBM Plex Sans';color:var(--ink-1)}
+  .guide-text p{margin:0 0 12px}
+  .guide-text .lead{font-weight:600;color:var(--ink-0)}
+
+  /* in-flight controls: LAND is the one control that must be impossible to miss */
+  .flight-banner{display:flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.08em;
+    text-transform:uppercase;color:var(--amber);background:var(--amber-soft);border:1px solid var(--amber);padding:9px 12px;margin-bottom:12px}
+  .flight-banner .dot{width:9px;height:9px;border-radius:50%;background:var(--amber);animation:pulse 1.1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .btn-land{width:100%;padding:20px;border:2px solid var(--red);background:var(--red);color:#fff;
+    font:700 20px 'IBM Plex Sans';letter-spacing:.12em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:12px}
+  .btn-land:hover{filter:brightness(.93)}
+  .hide{display:none !important}
+</style>
+</head>
+<body class="launcher-body">
+
+<header class="topbar">
+  <a href="#" class="back-link">← Back to menu</a>
+  <div class="brand" style="padding-left:16px;border-left:1px solid var(--hairline)">
+    <div class="brand-glyph"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div>
+    <div><div class="brand-name">Real drone setup</div><div class="brand-sub">connection wizard</div></div>
+  </div>
+  <div class="topbar-spacer"></div>
+</header>
+
+<div class="mockbar">
+  <span class="lbl">Mockup state:</span>
+  <button onclick="setState('passed',this)" class="on">Pre-flight PASSED</button>
+  <button onclick="setState('armed',this)">Armed (ground)</button>
+  <button onclick="setState('flying',this)">In flight</button>
+  <button onclick="openModal('m-arm')">Arm confirm ▸</button>
+  <button onclick="openModal('m-hop')">Hop confirm ▸</button>
+  <button onclick="openModal('m-guide')">Guide ▸</button>
+</div>
+
+<main class="real-main">
+  <aside class="real-sidebar">
+    <div class="panel-head"><span>Saved profiles</span><span class="panel-count mono">1</span></div>
+    <button type="button" class="btn btn-ghost btn-block">New profile</button>
+    <div class="profile-list">
+      <div class="pcard active connected"><div class="pcard-main"><span class="pcard-dot on"></span>
+        <div class="pcard-info"><div class="pcard-name">x500_main</div><div class="pcard-meta">RADIO · 57600</div></div>
+        <button class="pcard-btn is-disc">Disc</button></div>
+        <div class="pcard-live">on air · veh_0</div></div>
+    </div>
+  </aside>
+
+  <section class="real-content">
+    <div class="w-head">
+      <div class="w-eyebrow">Connection</div>
+      <div class="content-card-title">x500_main</div>
+      <div class="w-sub">Name the drone, pick a channel, connect, then save.</div>
+    </div>
+
+    <form class="wizard" onsubmit="return false">
+      <!-- steps 1-3 collapsed for context -->
+      <div class="wstep"><div class="wstep-num">1</div><div class="panel accent-blue wstep-card"><div class="p-head"><span class="p-t">Drone identity</span><span class="p-sub">x500_main</span></div></div></div>
+      <div class="wstep"><div class="wstep-num">2</div><div class="panel accent-amber wstep-card"><div class="p-head"><span class="p-t">Connection channel</span><span class="p-sub">Radio · 57600</span></div></div></div>
+      <div class="wstep"><div class="wstep-num">3</div><div class="panel accent-green wstep-card"><div class="p-head"><span class="p-t">Connect &amp; save</span><span class="p-sub">link established</span></div>
+        <div class="p-body"><div class="connect-row"><button type="button" class="btn btn-primary btn-lg" style="flex:1">Select port and connect</button><button type="button" class="btn btn-lg" style="flex:1">Check it</button></div>
+          <div class="status-line"><span class="radio-dot on"></span><span class="mono small" style="color:var(--green)">on air · veh_0</span></div></div></div></div>
+
+      <!-- STEP 4 — Pre-flight & Arm (hardened) -->
+      <div class="wstep">
+        <div class="wstep-num">4</div>
+        <div class="panel accent-green wstep-card">
+          <div class="p-head">
+            <span class="p-t">Pre-flight &amp; arm</span>
+            <button type="button" class="guide-btn" onclick="openModal('m-guide')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V5l7-3z"/></svg>
+              Safe takeoff guide
+            </button>
+          </div>
+          <div class="p-body">
+
+            <div class="pf-verdict ok" id="verdict">✓ PASSED — ready to arm <span class="sub">all systems green</span></div>
+
+            <div class="check-grid" id="grid"></div>
+
+            <!-- arm row -->
+            <div class="connect-row" id="row-arm" style="margin-top:16px">
+              <button type="button" class="btn btn-primary btn-lg" onclick="openModal('m-arm')">Arm</button>
+              <span class="mono small" id="arm-hint">ready — first arm with props OFF</span>
+            </div>
+
+            <!-- armed block -->
+            <div class="hide" id="armed-block">
+              <div class="btn-row" style="margin-bottom:4px">
+                <span class="pf-armed-badge">● Armed · motors live</span>
+                <button type="button" class="btn">Disarm</button>
+              </div>
+
+              <div class="actions-block">
+                <div class="ab-t">1 · Motor test <span class="mono small" style="color:var(--ink-3)">— props OFF</span></div>
+                <div class="ab-d">Spins each motor briefly and auto-disarms. Check spin direction &amp; order against the airframe diagram before you ever put props on.</div>
+                <button type="button" class="btn btn-lg">▸ Spin motors (2 s) &amp; disarm</button>
+              </div>
+
+              <div class="actions-block">
+                <div class="ab-t">2 · Test hop <span class="mono small" style="color:var(--ink-3)">— props ON, outdoors</span></div>
+                <div class="ab-d">Takes off to ~0.5 m, holds, lands. Auto-lands if it climbs past 1.5 m or after timeout. Only after the motor test is clean and you're on open ground.</div>
+                <button type="button" class="btn btn-primary btn-lg" onclick="openModal('m-hop')">▲ Run test hop (0.5 m → land)</button>
+              </div>
+            </div>
+
+            <!-- in-flight controls: appear the moment the drone leaves the ground -->
+            <div class="hide" id="flight-block">
+              <div class="flight-banner"><span class="dot"></span> In flight · <span id="alt-live">0.5 m</span> — keep your hand here</div>
+              <button type="button" class="btn-land">■ Land now</button>
+              <div class="btn-row" style="margin-top:10px">
+                <button type="button" class="btn">Return home (RTL)</button>
+                <span class="mono small" style="color:var(--ink-3)">Disarm works on the ground only — use Land in the air</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+</main>
+
+<!-- ===== Arm confirmation modal ===== -->
+<div class="overlay hide" id="m-arm">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-title">Arm the drone?</span><button class="modal-x" onclick="closeModals()">×</button></div>
+    <div class="modal-body">
+      <p class="small" style="color:var(--ink-2);margin-bottom:12px">Arming spins the motors. For the first arm on a new build, do it with propellers removed.</p>
+      <label class="chk"><input type="checkbox"> Propellers are removed (first arm / motor test)</label>
+      <label class="chk"><input type="checkbox"> Nobody is within reach of the props</label>
+      <label class="chk"><input type="checkbox"> I'm standing clear, off to the side</label>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancel</button><button class="btn btn-primary" onclick="closeModals()">Arm</button></div>
+  </div>
+</div>
+
+<!-- ===== Test hop confirmation modal (stronger) ===== -->
+<div class="overlay hide" id="m-hop">
+  <div class="modal danger">
+    <div class="modal-head"><span class="modal-title">Run test hop?</span><button class="modal-x" onclick="closeModals()">×</button></div>
+    <div class="modal-body">
+      <div class="warn-line">The drone will lift off to ~0.5 m and land. It flies on its own — keep your hand on Land.</div>
+      <label class="chk"><input type="checkbox"> Propellers on, tight, correct rotation checked</label>
+      <label class="chk"><input type="checkbox"> Open ground — 10 m clear, not over people or cars</label>
+      <label class="chk"><input type="checkbox"> GPS fix good, pre-flight PASSED (not forced)</label>
+      <label class="chk"><input type="checkbox"> Hand on Land · RC backup on and ready</label>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancel</button><button class="btn btn-primary" onclick="closeModals()">Run test hop</button></div>
+  </div>
+</div>
+
+<!-- ===== Guide modal (bilingual) ===== -->
+<div class="overlay hide" id="m-guide">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Safe takeoff — before you fly</span>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="lang-seg"><button class="on" onclick="setLang('en',this)">EN</button><button onclick="setLang('ru',this)">RU</button></div>
+        <button class="modal-x" onclick="closeModals()">×</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="guide-text" id="guide-en">
+        <p class="lead">Two minutes here saves a drone — or a finger. Read it before the first takeoff.</p>
+        <p>First arm with the props <b>off</b>. Every time you touch a new build. Arm it, watch each motor spin up, check the direction and order against the airframe diagram, then disarm. If a motor turns the wrong way, or the wrong one moves — stop. That's a wiring problem, not a flight.</p>
+        <p>Props back on, go outside. Open ground, nothing and no one within ten meters, never over people or cars. Stand back five meters and off to the side — never in the plane of the props.</p>
+        <p>Battery in, QGroundControl closed (it holds the port), radio green, status on air. Hit <b>Check it</b> and get a green <b>PASSED</b> — a real GPS fix, home set. If it won't pass, don't force it. The gate is there for a reason.</p>
+        <p>Arm, let it settle a second, then hop. Thumb on <b>Land</b>, not Disarm — Disarm won't drop it out of the air anyway, Land is what brings it down. If it leans, drifts, or climbs more than you like — Land, right now. Got an RC transmitter? Keep it on and in your hands. That's your real backup.</p>
+        <p>No wind, no indoors, no build you haven't run on the bench. When in doubt, put it down.</p>
+      </div>
+      <div class="guide-text hide" id="guide-ru">
+        <p class="lead">Две минуты здесь — и дрон цел (и пальцы тоже). Прочти перед первым взлётом.</p>
+        <p>Сначала армимся <b>без винтов</b>. Каждый раз на новой сборке. Заармил, посмотрел, как раскручивается каждый мотор, сверил направление и порядок со схемой рамы — и разоружил. Мотор крутится не туда или дёргается не тот — стоп. Это косяк проводки, а не полёт.</p>
+        <p>Ставим винты, выходим на улицу. Открытое место, в радиусе десяти метров пусто, никогда над людьми и машинами. Отойди на пять метров и встань сбоку — не в плоскости винтов.</p>
+        <p>Батарея на месте, QGroundControl закрыт (он держит порт), радио зелёное, статус on air. Жмёшь <b>Check it</b> — нужен зелёный <b>PASSED</b>, живой GPS-фикс, home задан. Не проходит — не продавливай через force. Гейт стоит не просто так.</p>
+        <p>Заармил, дал секунду устояться, потом hop. Палец на <b>Land</b>, не на Disarm — Disarm в воздухе всё равно не сработает, сажает именно Land. Кренит, тянет вбок, лезет выше, чем хочется — Land, сразу. Есть пульт — держи включённым и в руках. Вот это твоя настоящая страховка.</p>
+        <p>Без ветра, не в помещении, и не на сборке, которую не гонял на столе. Сомневаешься — сажай.</p>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModals()">Got it</button></div>
+  </div>
+</div>
+
+<script>
+  const CHECKS = [
+    ["HEARTBEAT","OK","ok"],["FIRMWARE","1.15.0","info"],
+    ["GPS FIX","3D · 14 sat","ok"],["BATTERY","16.42 V · 82%","ok"],
+    ["CALIB GYRO","OK","ok"],["CALIB ACCEL","OK","ok"],["CALIB MAG","OK","ok"],
+    ["GLOBAL POS","OK","ok"],["HOME POS","OK","ok"],
+    ["LOCAL POS / EKF","OK","ok"],["ARMABLE","YES","ok"],
+  ];
+  function grid(){document.getElementById('grid').innerHTML=CHECKS.map(([l,v,c])=>`<div class="check ${c}"><div class="check-label">${l}</div><div class="check-value">${v}</div></div>`).join('');}
+  function setState(s,btn){
+    document.querySelectorAll('.mockbar button').forEach(b=>{
+      if(b.textContent.includes('Pre-flight')||b.textContent.includes('Armed')||b.textContent.includes('In flight'))b.classList.remove('on');
+    });
+    if(btn) btn.classList.add('on');
+    document.getElementById('row-arm').classList.toggle('hide', s!=='passed');
+    document.getElementById('armed-block').classList.toggle('hide', s!=='armed');
+    document.getElementById('flight-block').classList.toggle('hide', s!=='flying');
+  }
+  function openModal(id){document.getElementById(id).classList.remove('hide');}
+  function closeModals(){document.querySelectorAll('.overlay').forEach(o=>o.classList.add('hide'));}
+  function setLang(l,btn){
+    document.querySelectorAll('.lang-seg button').forEach(b=>b.classList.remove('on'));
+    if(btn)btn.classList.add('on');
+    document.getElementById('guide-en').classList.toggle('hide',l!=='en');
+    document.getElementById('guide-ru').classList.toggle('hide',l!=='ru');
+  }
+  document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModals();}));
+  grid(); setState('passed');
+</script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+{
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true
+  },
+  "search.exclude": {
+    "**/.venv": true,
+    "**/venv": true,
+    "**/node_modules": true,
+    "**/PX4-Autopilot": true,
+    "**/data": true,
+    "**/logs": true,
+    "**/.idea": true
+  },
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/node_modules/**": true,
+    "**/PX4-Autopilot/**": true
+  },
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.envFile": "${workspaceFolder}/.env.dev",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/src"
+  ],
+  "python.analysis.exclude": [
+    "**/.venv/**",
+    "**/PX4-Autopilot/**",
+    "**/data/**",
+    "**/logs/**"
+  ],
+  "python.analysis.typeCheckingMode": "basic",
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.terminal.useEnvFile": true,
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "terminal.integrated.env.osx": {
+    "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+    "PATH": "${workspaceFolder}/.venv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${env:PATH}",
+    "PYTHONPATH": "${workspaceFolder}/src",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": false
+  },
+  "ruff.importStrategy": "fromEnvironment",
+  "cmake.configureOnOpen": false,
+  "code-runner.executorMap": {
+    "python": "\"$workspaceRoot/.venv/bin/python\" -u"
+  },
+  "code-runner.runInTerminal": true,
+  "code-runner.fileDirectoryAsCwd": false,
+  "code-runner.ignoreSelection": true
+}

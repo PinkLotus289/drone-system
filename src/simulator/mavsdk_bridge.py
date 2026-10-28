@@ -18,13 +18,15 @@ from mavsdk import System
 from mavsdk.mission import MissionItem, MissionPlan
 from drone_core.config.settings import Settings
 from drone_core.infra.messaging.mqtt_bus import MqttBus
+from drone_core import preflight
 
 # --- логирование ---
+# Пишем и в stdout (→ journald), и в файл bridge-<id>.log — чтобы потом можно
+# было разобрать сессию подключения борта (connect/heartbeat/health/arm/test_hop).
+from drone_core.utils import logging as skylog
+_proc_id = os.environ.get("REAL_DRONE_ID") or os.environ.get("DRONE_ID") or f"pid{os.getpid()}"
+skylog.setup(name=f"bridge-{_proc_id}")
 log = logging.getLogger("mavsdk-bridge")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-)
 
 # aiogrpc дублирует "Socket closed" исключения в свой логгер при остановке
 # mavsdk_server — это шум, а не реальная ошибка. Bridge сам логирует те же
@@ -339,6 +341,16 @@ async def run_native_mission(
 # =====================================================
 #  Обработка MQTT команд
 # =====================================================
+def _preflight_from_state(telem_state: dict | None) -> dict:
+    """Оценка pre-flight по последним снимкам телеметрии в telem_state.
+
+    Возвращает результат preflight.evaluate (ok/verdict/checks/reasons).
+    Пустой telem_state → fail-safe (ok=False), армиться нельзя.
+    """
+    ts = telem_state or {}
+    return preflight.evaluate(ts.get("health"), ts.get("gps"), ts.get("battery"))
+
+
 async def handle_command(msg, sys: System, name: str, bus: MqttBus, state_ctx: dict, telem_state: dict | None = None):
     topic = msg.topic
     cmd = topic.split("/")[-1]
@@ -361,10 +373,93 @@ async def handle_command(msg, sys: System, name: str, bus: MqttBus, state_ctx: d
     # --- выполнение команд ---
     try:
         if cmd == "arm":
+            # ЖЁСТКИЙ pre-flight гейт: не армимся, если что-то красное.
+            # payload {"force": true} — осознанный обход оператором (под запись).
+            force = bool(payload.get("force"))
+            pf = _preflight_from_state(telem_state)
+            if not pf["ok"] and not force:
+                log.warning(f"[{name}] ⛔ ARM ЗАБЛОКИРОВАН pre-flight: {pf['reasons']}")
+                bus.publish(f"preflight/{name}/result", {
+                    "vehicle_id": name, "result": "REJECTED",
+                    "reasons": pf["reasons"], "checks": pf["checks"], "ts": time.time(),
+                }, qos=1)
+                return
+            if not pf["ok"] and force:
+                log.warning(f"[{name}] ⚠️ ARM FORCE-OVERRIDE несмотря на: {pf['reasons']}")
+            log.info(f"[{name}] [ARM] pre-flight={pf['verdict']} force={force} health={telem_state.get('health')}")
             _set_state(state_ctx, name, "arming")
             await sys.action.arm()
             _set_state(state_ctx, name, "armed")
             log.info(f"[{name}] ✅ Armed")
+            bus.publish(f"preflight/{name}/result", {
+                "vehicle_id": name, "result": "ARMED",
+                "forced": force, "ts": time.time(),
+            }, qos=1)
+
+        elif cmd == "disarm":
+            await sys.action.disarm()
+            _set_state(state_ctx, name, "idle", reason="disarm command")
+            log.info(f"[{name}] 🔒 Disarmed")
+
+        elif cmd == "motor_test":
+            # Проверка моторов БЕЗ взлёта (пропеллеры сняты!): гейт → arm →
+            # холостая прокрутка MOTOR_TEST_SEC → авто-disarm. Даёт проверить
+            # направление/порядок вращения без риска полёта.
+            force = bool(payload.get("force"))
+            pf = _preflight_from_state(telem_state)
+            if not pf["ok"] and not force:
+                log.warning(f"[{name}] ⛔ MOTOR-TEST ЗАБЛОКИРОВАН pre-flight: {pf['reasons']}")
+                bus.publish(f"preflight/{name}/result", {
+                    "vehicle_id": name, "result": "REJECTED",
+                    "reasons": pf["reasons"], "checks": pf["checks"], "ts": time.time(),
+                }, qos=1)
+                return
+            dur = max(0.5, min(5.0, float(payload.get("sec") or preflight.MOTOR_TEST_SEC)))
+            log.info(f"[{name}] 🌀 MOTOR-TEST (props OFF!): arm → прокрутка {dur:.1f}с → disarm")
+            _set_state(state_ctx, name, "motor_test")
+            await sys.action.arm()
+            await asyncio.sleep(dur)
+            await sys.action.disarm()
+            log.info(f"[{name}] 🌀 MOTOR-TEST завершён, disarmed")
+            _set_state(state_ctx, name, "idle", reason="motor_test done")
+
+        elif cmd == "test_hop":
+            # Проверочная мини-миссия: pre-flight гейт → взлёт на HOP_ALT_M
+            # (клэмп [0.3,1.5] м) → зависание → посадка. СТОРОЖ ВЫСОТЫ: если борт
+            # полез выше HOP_MAX_ALT_M — немедленная аварийная посадка.
+            force = bool(payload.get("force"))
+            pf = _preflight_from_state(telem_state)
+            if not pf["ok"] and not force:
+                log.warning(f"[{name}] ⛔ TEST-HOP ЗАБЛОКИРОВАН pre-flight: {pf['reasons']}")
+                bus.publish(f"preflight/{name}/result", {
+                    "vehicle_id": name, "result": "REJECTED",
+                    "reasons": pf["reasons"], "checks": pf["checks"], "ts": time.time(),
+                }, qos=1)
+                return
+            hop = preflight.clamp_hop_alt(payload.get("alt") or preflight.HOP_ALT_M)
+            max_alt = preflight.HOP_MAX_ALT_M
+            log.info(f"[{name}] 🐇 TEST-HOP: взлёт на {hop:.2f} м (сторож {max_alt:.1f} м) → зависание → посадка")
+            _set_state(state_ctx, name, "test_hop")
+            await sys.action.set_takeoff_altitude(hop)
+            await sys.action.arm()
+            await sys.action.takeoff()
+            reached = False
+            aborted = False
+            for _ in range(90):  # до ~18с
+                await asyncio.sleep(0.2)
+                a = float((telem_state or {}).get("alt_rel", 0.0))
+                if a > max_alt:  # сторож высоты — аварийная посадка
+                    log.warning(f"[{name}] ⚠️ TEST-HOP АБОРТ: высота {a:.2f} м > сторожа {max_alt:.1f} м → LAND")
+                    aborted = True
+                    break
+                if a >= hop * 0.8:
+                    reached = True
+                    break
+            if reached and not aborted:
+                await asyncio.sleep(2.0)  # короткое зависание
+            await sys.action.land()
+            log.info(f"[{name}] 🛬 TEST-HOP: посадка (reached={reached} aborted={aborted})")
+            _set_state(state_ctx, name, "idle", reason="test_hop done")
 
         elif cmd == "takeoff":
             await sys.action.takeoff()
@@ -873,17 +968,71 @@ async def run_for_drone(
                 now = time.time()
                 if now - last_publish < 1.0:
                     continue
-                # remaining_percent в MAVSDK = 0..1 (доля). Преобразуем в проценты.
-                pct = float(getattr(b, "remaining_percent", 0.0) or 0.0)
-                pct = pct * 100.0 if pct <= 1.5 else pct  # на случай если уже в %
+                # remaining_percent: у PX4/MAVSDK бывает 0..1 (доля) ИЛИ 0..100 (%),
+                # а если ёмкость батареи не задана — приходит отрицательный сентинел
+                # (−1 / −100 = «неизвестно»). Раньше слепое ×100 давало «−10000%».
+                raw = getattr(b, "remaining_percent", None)
+                try:
+                    raw = float(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    raw = None
+                if raw is None or raw < 0:
+                    pct = None  # батарея не откалибрована → процент неизвестен
+                else:
+                    pct = raw * 100.0 if raw <= 1.5 else raw
+                    pct = round(min(100.0, pct), 1)
+                voltage = float(getattr(b, "voltage_v", 0.0) or 0.0)
                 bus.publish(f"telem/{name}/battery", {
-                    "voltage_v": float(getattr(b, "voltage_v", 0.0) or 0.0),
-                    "remaining_pct": round(pct, 1),
+                    "voltage_v": voltage,
+                    "remaining_pct": pct,           # None = неизвестно
                     "ts": now,
                 }, qos=0)
+                # Кэш для pre-flight гейта (см. handle_command 'arm').
+                telem_state["battery"] = {"pct": pct, "voltage_v": voltage}
                 last_publish = now
         except BaseException as e:
             _log_stream_stop(name, "battery", e)
+
+    # --- health-флаги (калибровки/позиция/armable) → MQTT + кэш для гейта ---
+    async def publish_health():
+        try:
+            last_publish = 0.0
+            last_armable = None
+            last_diag = 0.0
+            async for h in sys.telemetry.health():
+                snap = {
+                    "gyro_ok": bool(h.is_gyrometer_calibration_ok),
+                    "accel_ok": bool(h.is_accelerometer_calibration_ok),
+                    "mag_ok": bool(h.is_magnetometer_calibration_ok),
+                    "local_pos_ok": bool(h.is_local_position_ok),
+                    "global_pos_ok": bool(h.is_global_position_ok),
+                    "home_ok": bool(h.is_home_position_ok),
+                    "armable": bool(h.is_armable),
+                }
+                telem_state["health"] = snap  # свежий снимок для pre-flight гейта
+                now = time.time()
+
+                # ДИАГНОСТИКА: логируем смену armable + периодически «почему не готов».
+                # Это главная зацепка при разборе «дрон не армится».
+                if snap["armable"] != last_armable:
+                    pf = _preflight_from_state(telem_state)
+                    if snap["armable"]:
+                        log.info(f"[{name}] [PREFLIGHT] ✅ ARMABLE — все системы готовы")
+                    else:
+                        log.warning(f"[{name}] [PREFLIGHT] ⛔ НЕ armable — блокеры: {pf['reasons']}")
+                    last_armable = snap["armable"]
+                    last_diag = now
+                elif not snap["armable"] and now - last_diag >= 10.0:
+                    pf = _preflight_from_state(telem_state)
+                    log.info(f"[{name}] [PREFLIGHT] всё ещё не готов: {pf['reasons']} | health={snap}")
+                    last_diag = now
+
+                if now - last_publish < 1.0:
+                    continue
+                bus.publish(f"telem/{name}/health", {**snap, "ts": now}, qos=0)
+                last_publish = now
+        except BaseException as e:
+            _log_stream_stop(name, "health", e)
 
     # --- attitude: pitch / roll / yaw в градусах ---
     async def publish_attitude():
@@ -913,11 +1062,13 @@ async def run_for_drone(
                     continue
                 # fix_type — enum, FIX_TYPE_3D и т.п.
                 fix_str = str(getattr(g, "fix_type", "")).split(".")[-1] or "UNKNOWN"
+                sats = int(getattr(g, "num_satellites", 0) or 0)
                 bus.publish(f"telem/{name}/gps", {
-                    "satellites": int(getattr(g, "num_satellites", 0) or 0),
+                    "satellites": sats,
                     "fix_type": fix_str,
                     "ts": now,
                 }, qos=0)
+                telem_state["gps"] = {"satellites": sats, "fix_type": fix_str}
                 last_publish = now
         except BaseException as e:
             _log_stream_stop(name, "gps_info", e)
@@ -1039,6 +1190,7 @@ async def run_for_drone(
             log_mission_progress(),
             publish_actuators(),
             publish_battery(),
+            publish_health(),
             publish_attitude(),
             publish_gps_info(),
             publish_velocity(),
