@@ -71,7 +71,7 @@ class RealSupervisor:
 
         print(f"[real] ▶️ connect {name}: {url} (gRPC :{grpc_port})")
         proc = subprocess.Popen(
-            ["python", "-m", "simulator.mavsdk_bridge"],
+            [sys.executable, "-m", "simulator.mavsdk_bridge"],
             cwd=str(_SRC), env=env,
             stderr=subprocess.STDOUT,
             start_new_session=True,

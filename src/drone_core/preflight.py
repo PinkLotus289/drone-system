@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import os
+import math
 from typing import Any, Dict, List, Optional
 
 
@@ -100,7 +101,7 @@ def evaluate(
         "gps", "GPS FIX",
         f"{fix or 'no fix'} · {sats_n} sat",
         gps_ok,
-        warn=(sats_n > 0 and not gps_ok),  # есть спутники, но фикса ещё нет — жёлтый
+        warn=False,
     )
 
     # позиции.
@@ -110,28 +111,24 @@ def evaluate(
     if REQUIRE_HOME:
         add("home", "HOME POS", "OK" if health.get("home_ok") else "no",
             bool(health.get("home_ok")))
-    if "local_pos_ok" in health:
-        add("local_pos", "LOCAL POS / EKF", "OK" if health.get("local_pos_ok") else "no",
-            bool(health.get("local_pos_ok")))
+    add("local_pos", "LOCAL POS / EKF", "OK" if health.get("local_pos_ok") else "no",
+        bool(health.get("local_pos_ok")))
 
     # батарея.
     pct = battery.get("pct")
     v = battery.get("voltage_v")
     vtxt_v = f"{v:.2f} V" if isinstance(v, (int, float)) and v else None
-    if isinstance(pct, (int, float)) and pct >= 0:
+    if isinstance(pct, (int, float)) and math.isfinite(pct) and 0 <= pct <= 100:
         vtxt = f"{vtxt_v} · {pct:.0f}%" if vtxt_v else f"{pct:.0f}%"
-        add("battery", "BATTERY", vtxt, pct >= MIN_BATTERY_PCT,
-            warn=(MIN_BATTERY_PCT * 0.8 <= pct < MIN_BATTERY_PCT))
-    elif vtxt_v is not None:
-        # процент неизвестен (батарея не откалибрована в PX4) — показываем вольтаж
-        # как warn, но НЕ блокируем: авторитетный гейт — is_armable от PX4.
-        checks.append({"key": "battery", "label": "BATTERY",
-                       "value": f"{vtxt_v} · % n/a (calibrate in QGC)", "status": "warn"})
+        add("battery", "BATTERY", vtxt, pct >= MIN_BATTERY_PCT)
+    else:
+        add("battery", "BATTERY", "charge unknown — configure battery monitor in QGC", False)
+    voltage_ok = isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+    add("voltage", "BATTERY VOLTAGE", vtxt_v or "unknown", voltage_ok)
 
     # финальный вердикт самого PX4 — авторитетный.
     armable = health.get("armable")
-    if armable is not None:
-        add("armable", "ARMABLE (PX4)", "YES" if armable else "NO", bool(armable))
+    add("armable", "ARMABLE (PX4)", "YES" if armable is True else "NO / unknown", armable is True)
 
     ok = len(reasons) == 0
     return {

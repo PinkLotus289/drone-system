@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ from drone_core.profiles import DroneProfile, profile_store
 from . import auth as authmod
 from .real_control import real_supervisor
 from .radio_relay import radio_manager
+from drone_core.real_safety import expire_report
 
 router = APIRouter()
 settings = Settings()
@@ -60,6 +61,8 @@ async def get_profile(name: str):
 
 @router.post("/api/real/profiles")
 async def save_profile(body: Dict[str, Any]):
+    if real_supervisor.is_connected(str(body.get("name", ""))):
+        raise HTTPException(status_code=409, detail="Disconnect the disarmed drone before changing its profile")
     try:
         profile = DroneProfile.model_validate(body)
     except Exception as e:
@@ -70,6 +73,8 @@ async def save_profile(body: Dict[str, Any]):
 
 @router.delete("/api/real/profiles/{name}")
 async def delete_profile(name: str):
+    if real_supervisor.is_connected(name):
+        raise HTTPException(status_code=409, detail="Disconnect the disarmed drone before deleting its profile")
     ok = profile_store.delete(name)
     if not ok:
         raise HTTPException(status_code=404, detail="profile_not_found")
@@ -250,7 +255,7 @@ async def _run_test_connection(connection_url: str, timeout_s: float) -> Dict[st
     finally:
         # mavsdk_server остановится при сборке мусора объекта `drone`.
         # Явный close MAVSDK-Python не предоставляет.
-        del drone
+        drone._stop_mavsdk_server()
 
 
 @router.post("/api/real/test-connection")
@@ -267,6 +272,9 @@ async def test_connection(req: TestConnRequest):
 # =====================================================
 @router.post("/api/real/connect/{name}")
 async def connect_real(name: str):
+    from .sim_control import sim_supervisor
+    if sim_supervisor.status().get("state") in {"starting", "running", "stopping"}:
+        raise HTTPException(status_code=409, detail="Stop simulation before connecting a real airframe")
     profile = profile_store.get(name)
     if profile is None:
         # Профиль ещё не сохранён — разрешаем подключиться по радио с временным
@@ -280,6 +288,10 @@ async def connect_real(name: str):
     # MAVSDK-мост цепляется к реле по localhost tcp, а не к железу напрямую.
     if profile.connection_type == "radio":
         relay = await radio_manager.ensure(name)
+        # Creating the TCP relay yields to the event loop; simulation might
+        # have started meanwhile. No await between this check and spawn.
+        if sim_supervisor.status().get("state") in {"starting", "running", "stopping"}:
+            raise HTTPException(status_code=409, detail="Stop simulation before connecting a real airframe")
         url = f"tcp://127.0.0.1:{relay.tcp_port}"
         return real_supervisor.connect(profile, url_override=url)
     return real_supervisor.connect(profile)
@@ -300,7 +312,12 @@ async def radio_test(name: str):
 
 
 @router.post("/api/real/disconnect/{name}")
-async def disconnect_real(name: str):
+async def disconnect_real(name: str, request: Request):
+    if real_supervisor.is_connected(name):
+        d = getattr(request.app.state, "active_drones", {}).get(f"veh_{name}") or {}
+        report = expire_report(d.get("safety"), d.get("safety_received"))
+        if not report.get("can_disarm") or report.get("armed") is not False or report.get("phase") in {"arming", "taking_off", "moving", "landing", "fault"}:
+            raise HTTPException(status_code=409, detail="Disconnect blocked: confirm landed and disarmed first. If state is unknown, use LAND or RC backup.")
     res = real_supervisor.disconnect(name)
     # Для radio дополнительно гасим реле (закроет и браузерный агент).
     if radio_manager.get(name) is not None:
@@ -309,8 +326,15 @@ async def disconnect_real(name: str):
 
 
 @router.get("/api/real/connections")
-async def real_connections():
-    return {"connections": real_supervisor.status(), "radio": radio_manager.status()}
+async def real_connections(request: Request):
+    connections = real_supervisor.status()
+    drones = getattr(request.app.state, "active_drones", {})
+    for name, conn in connections.items():
+        d = drones.get(f"veh_{name}") or {}
+        report = expire_report(d.get("safety"), d.get("safety_received"))
+        conn["bridge_running"] = conn["connected"]
+        conn["connected"] = report.get("link_connected", False)
+    return {"connections": connections, "radio": radio_manager.status()}
 
 
 # =====================================================
@@ -333,6 +357,10 @@ async def radio_agent_ws(websocket: WebSocket, name: str):
         return
 
     await websocket.accept()
+    existing = radio_manager.get(name)
+    if existing and existing.agent_connected:
+        await websocket.close(code=1008, reason="Radio is already attached in another tab")
+        return
     relay = await radio_manager.attach_agent(name, websocket)
     print(f"[radio] agent attached for '{name}' (op={payload.get('op')})")
     try:

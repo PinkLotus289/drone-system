@@ -19,6 +19,7 @@ from mavsdk.mission import MissionItem, MissionPlan
 from drone_core.config.settings import Settings
 from drone_core.infra.messaging.mqtt_bus import MqttBus
 from drone_core import preflight
+from drone_core.real_safety import battery_percent
 
 # --- логирование ---
 # Пишем и в stdout (→ journald), и в файл bridge-<id>.log — чтобы потом можно
@@ -369,6 +370,13 @@ async def handle_command(msg, sys: System, name: str, bus: MqttBus, state_ctx: d
         return
 
     log.info(f"[{name}] 📡 cmd={cmd}, payload={payload}")
+
+    # Real-airframe commands can never reach the legacy unrestricted/SITL
+    # executor, including commands published by the mission orchestrator.
+    real_flight = state_ctx.get("real_flight")
+    if real_flight is not None:
+        await real_flight.command(cmd, payload)
+        return
 
     # --- выполнение команд ---
     try:
@@ -779,7 +787,7 @@ async def handle_command(msg, sys: System, name: str, bus: MqttBus, state_ctx: d
 # =====================================================
 #  Логика отдельного дрона
 # =====================================================
-async def run_for_drone(
+async def _run_for_drone(
     instance_id: str,
     connection_url: str,
     home_lat: float,
@@ -787,6 +795,7 @@ async def run_for_drone(
     home_alt: float,
     grpc_port: int = 50051,
     is_sim: bool = True,
+    connected_system=None,
 ):
     name = f"veh_{instance_id}"
     settings = Settings()
@@ -796,7 +805,7 @@ async def run_for_drone(
     bus = MqttBus(settings.MQTT_URL, client_id=f"mavsdk-{name}-{os.getpid()}")
     bus.start()
 
-    sys = await connect_system(connection_url, grpc_port=grpc_port)
+    sys = connected_system or await connect_system(connection_url, grpc_port=grpc_port)
 
     if is_sim:
         # Конфигурация PX4 SITL для автономного полёта без RC.
@@ -814,20 +823,23 @@ async def run_for_drone(
             if h.is_global_position_ok and h.is_home_position_ok:
                 return True
         return False
-    try:
-        await asyncio.wait_for(_wait_gps(), timeout=(20.0 if is_sim else 12.0))
-    except asyncio.TimeoutError:
-        log.warning(f"[{name}] ⏱️ нет GPS-фикса за таймаут — объявляю борт без позиции")
+    if is_sim:
+        try:
+            await asyncio.wait_for(_wait_gps(), timeout=20.0)
+        except asyncio.TimeoutError:
+            log.warning(f"[{name}] ⏱️ нет GPS-фикса за таймаут — объявляю борт без позиции")
+    # Real bridges register emergency command handling immediately. GPS/health
+    # readiness is determined by RealSafety, without a 12-second command gap.
 
     # первая публикация
     bus.publish("fleet/active", {
         "id": name,
         "name": name,
         "status": "IDLE",
-        "lat": home_lat,
-        "lon": home_lon,
-        "alt": home_alt,
-        "soc": 100.0,
+        "lat": home_lat if is_sim else None,
+        "lon": home_lon if is_sim else None,
+        "alt": home_alt if is_sim else None,
+        "soc": 100.0 if is_sim else None,
     }, qos=1)
     log.info(f"[{name}] 👋 Объявился во fleet/active")
     _set_state(state_ctx, name, "idle", reason="bridge ready")
@@ -846,6 +858,11 @@ async def run_for_drone(
         "mission_total": 0,
         "ts": 0.0,
     }
+    real_flight = None
+    if not is_sim:
+        from simulator.real_flight import RealFlight
+        real_flight = RealFlight(sys, bus, name)
+        state_ctx["real_flight"] = real_flight
 
     # подписка на команды
     loop = asyncio.get_running_loop()
@@ -874,6 +891,8 @@ async def run_for_drone(
                 telem_state["alt_rel"] = pos.relative_altitude_m
                 telem_state["alt_abs"] = pos.absolute_altitude_m
                 telem_state["ts"] = now
+                if real_flight:
+                    real_flight.safety.observe("position", {"lat": pos.latitude_deg, "lon": pos.longitude_deg, "alt": pos.relative_altitude_m})
 
                 if now - last_publish >= 0.25:  # 4 Hz max в MQTT
                     bus.publish(f"telem/{name}/pose", {
@@ -968,19 +987,10 @@ async def run_for_drone(
                 now = time.time()
                 if now - last_publish < 1.0:
                     continue
-                # remaining_percent: у PX4/MAVSDK бывает 0..1 (доля) ИЛИ 0..100 (%),
-                # а если ёмкость батареи не задана — приходит отрицательный сентинел
-                # (−1 / −100 = «неизвестно»). Раньше слепое ×100 давало «−10000%».
+                # The pinned MAVSDK 2.8 API returns percent in [0,100], not a
+                # fraction. Never turn an actual 1% into a fictitious 100%.
                 raw = getattr(b, "remaining_percent", None)
-                try:
-                    raw = float(raw) if raw is not None else None
-                except (TypeError, ValueError):
-                    raw = None
-                if raw is None or raw < 0:
-                    pct = None  # батарея не откалибрована → процент неизвестен
-                else:
-                    pct = raw * 100.0 if raw <= 1.5 else raw
-                    pct = round(min(100.0, pct), 1)
+                pct = battery_percent(raw)
                 voltage = float(getattr(b, "voltage_v", 0.0) or 0.0)
                 bus.publish(f"telem/{name}/battery", {
                     "voltage_v": voltage,
@@ -989,6 +999,8 @@ async def run_for_drone(
                 }, qos=0)
                 # Кэш для pre-flight гейта (см. handle_command 'arm').
                 telem_state["battery"] = {"pct": pct, "voltage_v": voltage}
+                if real_flight:
+                    real_flight.safety.observe("battery", telem_state["battery"])
                 last_publish = now
         except BaseException as e:
             _log_stream_stop(name, "battery", e)
@@ -1040,6 +1052,8 @@ async def run_for_drone(
             last_publish = 0.0
             async for a in sys.telemetry.attitude_euler():
                 now = time.time()
+                if real_flight:
+                    real_flight.safety.observe("attitude", {"pitch": a.pitch_deg, "roll": a.roll_deg, "yaw": a.yaw_deg})
                 if now - last_publish < 0.4:  # ~2.5 Hz
                     continue
                 bus.publish(f"telem/{name}/attitude", {
@@ -1069,6 +1083,8 @@ async def run_for_drone(
                     "ts": now,
                 }, qos=0)
                 telem_state["gps"] = {"satellites": sats, "fix_type": fix_str}
+                if real_flight:
+                    real_flight.safety.observe("gps", telem_state["gps"])
                 last_publish = now
         except BaseException as e:
             _log_stream_stop(name, "gps_info", e)
@@ -1106,7 +1122,7 @@ async def run_for_drone(
         was_airborne = False  # дрон реально взлетал в текущей миссии
         try:
             while True:
-                flying = bool(telem_state["in_air"]) and telem_state["alt_rel"] > 1.0
+                flying = bool(telem_state["in_air"])
                 status = "FLYING" if flying else "IDLE"
 
                 bus.publish("fleet/active", {
@@ -1116,7 +1132,7 @@ async def run_for_drone(
                     "lat": telem_state["lat"],
                     "lon": telem_state["lon"],
                     "alt": telem_state["alt_rel"],
-                    "soc": 100.0,
+                    "soc": (telem_state.get("battery") or {}).get("pct"),
                 }, qos=0)
 
                 if status != last_status:
@@ -1180,8 +1196,7 @@ async def run_for_drone(
         except Exception as e:
             log.error(f"[{name}] ❌ Ошибка publish_fleet_active: {e!r}")
 
-    try:
-        await asyncio.gather(
+    telemetry_tasks = [asyncio.create_task(coro) for coro in (
             publish_position(),
             track_in_air(),
             publish_fleet_active(),
@@ -1194,9 +1209,27 @@ async def run_for_drone(
             publish_attitude(),
             publish_gps_info(),
             publish_velocity(),
-        )
+            *([real_flight.collect(), real_flight.monitor()] if real_flight else []),
+        )]
+    try:
+        await asyncio.gather(*telemetry_tasks)
     finally:
+        for task in telemetry_tasks:
+            task.cancel()
+        await asyncio.gather(*telemetry_tasks, return_exceptions=True)
+        if real_flight:
+            await real_flight.close()
         bus.stop()
+
+
+async def run_for_drone(instance_id, connection_url, home_lat, home_lon, home_alt, grpc_port=50051, is_sim=True):
+    if is_sim:
+        return await _run_for_drone(instance_id, connection_url, home_lat, home_lon, home_alt, grpc_port, True)
+    from simulator.guarded_mavsdk import run_guarded
+
+    async def run(system):
+        await _run_for_drone(instance_id, connection_url, home_lat, home_lon, home_alt, grpc_port, False, system)
+    return await run_guarded(connection_url, grpc_port, run)
 
 
 # =====================================================

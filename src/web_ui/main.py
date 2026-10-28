@@ -1,6 +1,8 @@
 from __future__ import annotations
 import json
 import asyncio
+import time
+import uuid
 import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -19,6 +21,8 @@ from .launcher import router as launcher_router
 from .real import router as real_router
 from . import auth as authmod
 from .control import ControlAuthority
+from .real_control import real_supervisor
+from drone_core.real_safety import expire_report
 from drone_core.utils import logging as skylog
 
 # Логи веб-процесса (включая radio-реле, preflight, команды) → stdout + web.log.
@@ -217,7 +221,8 @@ async def _startup():
                     d["alt"] = data.get("alt", d.get("alt"))
                     # копим трейл (формат [lon,lat,alt] как на фронте) с дедупом и капом
                     try:
-                        plat = data.get("lat"); plon = data.get("lon")
+                        plat = data.get("lat")
+                        plon = data.get("lon")
                         if plat is not None and plon is not None:
                             buf = app.state.drone_trails.setdefault(drone_id, [])
                             palt = float(data.get("alt") or 0.0)
@@ -254,6 +259,13 @@ async def _startup():
                         "home_ok": data.get("home_ok"),
                         "armable": data.get("armable"),
                     }
+                elif stream == "safety":
+                    # One authoritative bridge report, including command ACKs.
+                    # MQTT receive time cannot extend its own source timestamp.
+                    age = time.time() - float(data.get("ts", 0))
+                    if 0 <= age <= 3:
+                        d["safety"] = data
+                        d["safety_received"] = time.monotonic() - age
 
         elif topic.endswith("/planned"):
             msg["type"] = "mission_planned"
@@ -368,8 +380,8 @@ async def api_control_state(request: Request):
     sid = a.get("sid")
     leases = control.snapshot()
     out = {}
-    for scope, l in leases.items():
-        out[scope] = {"operator": l["operator"], "mine": l["sid"] == sid, "expires": l["expires"]}
+    for scope, lease in leases.items():
+        out[scope] = {"operator": lease["operator"], "mine": lease["sid"] == sid, "expires": lease["expires"]}
     return {"leases": out, "me": {"operator": a.get("op"), "sid": sid}}
 
 
@@ -412,7 +424,8 @@ async def api_control_takeover(request: Request, body: Optional[Dict[str, Any]] 
 
 
 # === Ручное управление дроном (guided) — под арбитражем ===
-_MANUAL_ACTIONS = {"arm", "disarm", "takeoff", "land", "rtl", "goto", "hold", "test_hop", "motor_test"}
+_MANUAL_ACTIONS = {"arm", "disarm", "takeoff", "land", "rtl", "goto", "hold", "test_hop", "motor_test",
+                   "test_takeoff", "test_step", "test_return", "test_keepalive"}
 
 
 @app.post("/api/drone/{veh_id}/command")
@@ -420,18 +433,41 @@ async def api_drone_command(veh_id: str, body: Dict[str, Any], request: Request)
     """Ручная команда борту. Требует держателя управления (scope "system").
     Безопасный guided-набор: arm/takeoff/land/rtl/goto/hold (без сырого стика)."""
     a = _auth_of(request)
-    if not control.is_holder("system", a.get("sid", "")):
+    action = str((body or {}).get("action") or "").lower()
+    veh = veh_id if str(veh_id).startswith("veh_") else f"veh_{veh_id}"
+    name = veh.removeprefix("veh_")
+    d = app.state.active_drones.get(veh) or {}
+    is_real = real_supervisor.is_connected(name) or "safety" in d
+    # An authenticated operator can always request emergency LAND on a real
+    # airframe, even if control ownership expired or another operator holds it.
+    if not (is_real and action == "land") and not control.is_holder("system", a.get("sid", "")):
         holder = control.get("system")
         return JSONResponse(
             {"error": "no_control", "holder": (holder or {}).get("operator"),
              "message": "Take control before commanding a drone."},
             status_code=403,
         )
-    action = str((body or {}).get("action") or "").lower()
     if action not in _MANUAL_ACTIONS:
         return JSONResponse({"error": "bad_action", "allowed": sorted(_MANUAL_ACTIONS)}, status_code=400)
 
-    veh = veh_id if str(veh_id).startswith("veh_") else f"veh_{veh_id}"
+    if is_real:
+        from simulator.real_flight import ACTIONS
+        if action not in ACTIONS or body.get("force"):
+            return JSONResponse({"error": "bounded_controls_required", "message": "Use real-flight test controls. Overrides and unrestricted flight are disabled."}, status_code=400)
+        report = expire_report(d.get("safety"), d.get("safety_received"))
+        if action not in {"land", "test_keepalive"}:
+            allowed = (report.get("can_disarm") if action == "disarm" else
+                       report.get("can_arm") if action == "arm" else report.get("ok"))
+            if not allowed:
+                return JSONResponse({"error": "preflight_blocked", "message": "; ".join(report.get("reasons", [])) or "Action unavailable", "checks": report.get("checks")}, status_code=409)
+        command_id = uuid.uuid4().hex
+        payload = {"command_id": command_id, "issued_at": time.time(), "bridge_id": report.get("bridge_id"),
+                   "operator_token": a.get("sid"), "direction": body.get("direction"),
+                   "safety_confirmed": body.get("safety_confirmed") is True}
+        if not bus._connected.is_set():
+            return JSONResponse({"error": "broker_offline", "message": "Command not delivered: MQTT offline. Use RC backup."}, status_code=503)
+        bus.publish(f"cmd/{veh}/{action}", payload, qos=0 if action == "test_keepalive" else 1)
+        return JSONResponse({"ok": True, "status": "queued", "command_id": command_id, "veh": veh, "action": action}, status_code=202)
     # hold = задержаться на месте: goto на текущую позицию борта (если известна)
     if action == "hold":
         d = app.state.active_drones.get(veh) or app.state.active_drones.get(veh_id) or {}
@@ -466,6 +502,10 @@ async def api_real_preflight(name: str, request: Request):
 
     veh = name if str(name).startswith("veh_") else f"veh_{name}"
     d = app.state.active_drones.get(veh) or app.state.active_drones.get(name)
+    if real_supervisor.is_connected(veh.removeprefix("veh_")) or (d and "safety" in d):
+        report = expire_report((d or {}).get("safety"), (d or {}).get("safety_received"))
+        report["veh"] = veh
+        return JSONResponse(report, headers={"Cache-Control": "no-store"})
     if not d:
         return JSONResponse(
             {"ok": False, "error": "no_telemetry",

@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import FileResponse
 
 from .sim_control import sim_supervisor
@@ -45,6 +45,9 @@ def _reset_session_state() -> None:
 
 @router.post("/api/launcher/sim/start")
 async def sim_start(body: Optional[Dict[str, Any]] = Body(None)):
+    from .real_control import real_supervisor
+    if real_supervisor.status():
+        raise HTTPException(status_code=409, detail="Disconnect real airframes before starting simulation")
     num_drones = None
     if body and "num_drones" in body:
         try:
@@ -58,6 +61,9 @@ async def sim_start(body: Optional[Dict[str, Any]] = Body(None)):
 
 @router.post("/api/launcher/sim/stop")
 async def sim_stop():
+    from .real_control import real_supervisor
+    if real_supervisor.status():
+        raise HTTPException(status_code=409, detail="Simulation stop cannot run while a real bridge is active")
     result = await sim_supervisor.stop()
     # После убийства бортов/воркеров чистим и UI-состояние, чтобы в лобби/при
     # следующем заходе не висели призраки прошлой симуляции.

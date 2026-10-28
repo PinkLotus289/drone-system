@@ -2,17 +2,17 @@ from __future__ import annotations
 import json
 import threading
 import time
-import queue
 import ssl
 import logging
-from typing import Any, Dict, Optional, Callable, Awaitable, Union, List
+from typing import Any, Dict, Optional, Callable, List
 from urllib.parse import urlparse
 
 import paho.mqtt.client as mqtt
+from .bus import EventBus, Message, Handler
+
 logging.getLogger("paho").setLevel(logging.WARNING)
 logging.getLogger("paho.mqtt.client").setLevel(logging.WARNING)
 
-from .bus import EventBus, Message, Handler
 
 log = logging.getLogger("mqtt-bus")
 
@@ -111,7 +111,6 @@ class MqttBus(EventBus):
             self._client.loop_stop()
         finally:
             try:
-                import asyncio
                 self._async_loop.call_soon_threadsafe(self._async_loop.stop)
             except Exception:
                 pass
@@ -220,15 +219,10 @@ class MqttBus(EventBus):
         # диспатчим всем хендлерам, подписанным ровно на этот топик
         # Paho сам делает matching wildcard-ов на стороне брокера.
         with self._lock:
-            handlers = list(self._handlers.get(msg.topic, []))
-            # плюс возможны wildcard-подписки — paho вернёт msg.topic, а подписывались мы на шаблон
-            # поэтому пробежимся и по тем, кто подписан на шаблон, если есть точное совпадение уже покрыто
-            if msg.topic not in self._handlers:
-                for pattern, hs in self._handlers.items():
-                    # простая эвристика: если клиент подписывался на pattern (например telem/+/pose),
-                    # брокер всё равно доставит, а тут мы просто также вызовем обработчики.
-                    if "+/" in pattern or "/#":
-                        handlers.extend(hs)
+            handlers = []
+            for pattern, hs in self._handlers.items():
+                if mqtt.topic_matches_sub(pattern, msg.topic):
+                    handlers.extend(hs)
 
         for h in handlers:
             try:

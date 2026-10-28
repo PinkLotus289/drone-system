@@ -507,3 +507,17 @@ textarea.invalid {
 .pf-guide { font: 400 13.5px/1.62 'IBM Plex Sans', sans-serif; color: var(--ink-1); }
 .pf-guide p { margin: 0 0 12px; }
 .pf-guide .lead { font-weight: 600; color: var(--ink-0); }
+
+/* Functional test controls, using the existing setup page tokens. */
+.pf-state { margin-top: 14px; padding: 10px 0; font-size: 13px; }
+.pf-command { min-height: 24px; overflow-wrap: anywhere; }
+.pf-command.bad { color: var(--red); }
+.pf-jog { display: grid; grid-template-columns: repeat(3, minmax(80px, 1fr)); gap: 8px; max-width: 430px; margin: 16px 0; }
+.pf-jog [data-step="forward"] { grid-column: 2; }
+.pf-jog [data-step="left"] { grid-column: 1; }
+.pf-jog [data-step="back"] { grid-column: 2; }
+.pf-emergency { position: fixed; right: 20px; bottom: 16px; width: min(420px, calc(100vw - 40px)); box-sizing: border-box; z-index: 60; padding: 12px; background: var(--surface, #fff); border: 1px solid var(--red); border-radius: 8px; }
+.launcher-body { padding-bottom: 170px; }
+.pf-emergency .small { margin-top: 8px; color: var(--ink-2); }
+#pf-px4 { white-space: pre-wrap; overflow-wrap: anywhere; }
+button:disabled { cursor: not-allowed; opacity: .45; }

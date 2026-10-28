@@ -348,8 +348,8 @@
     if (j.battery) {
       const v = j.battery.voltage_v;
       const pct = j.battery.remaining_percent;
-      const cls = v >= 14.5 ? "ok" : v >= 13.8 ? "warn" : "bad";
-      add("BATTERY", `${v?.toFixed?.(2) ?? "?"} V · ${(pct*100).toFixed(0)}%`, cls);
+      const percent = Number.isFinite(pct) && pct >= 0 && pct <= 100 ? pct : null;
+      add("BATTERY", `${v?.toFixed?.(2) ?? "?"} V · ${percent == null ? "charge unknown" : percent.toFixed(0) + "%"}`, percent != null && percent >= 30 ? "ok" : "bad");
     } else if (j.battery_error) {
       add("BATTERY", "n/a", "warn");
     }
@@ -378,7 +378,9 @@
       connections = j.connections || {};
       radioStatus = j.radio || {};
       await loadFleet();
-      refreshLive();   // только обновляем статус/телеметрию в существующих карточках
+      refreshLive();
+      const name = radioActiveName || activeName;
+      if (name && connections[name]?.bridge_running) startSupervision(name);
     } catch { /* silent */ }
   }
 
@@ -479,6 +481,13 @@
   }
 
   async function stopRadio() {
+    if (supervisedName) {
+      await runPreflight();
+      if (!pfSnapshot?.can_disarm || pfSnapshot.armed !== false || riskyState()) {
+        commandNotice("Disconnect blocked: confirm landed and disarmed first. LAND remains available.", true);
+        return;
+      }
+    }
     if (radioLink) { try { await radioLink.stop(); } catch { /* ignore */ } }
     radioActiveName = null;
     resetRadioButtons();
@@ -495,153 +504,172 @@
     await startRadio(data.name, radioBaud);
   }
 
-  // ===== Pre-flight & arm (Step 4) =====
+  // ===== Real-flight supervision: state comes only from bridge telemetry =====
   let pfTimer = null;
-  let pfState = "passed";        // passed | armed | flying
-  let pfFlyingSince = 0;
+  let supervisedName = null;
+  let pfSnapshot = null;
+  let pfPollBusy = false;
+  let pendingCommand = null;
+  let requestedFlight = "test_hop";
+  let keepaliveBusy = false;
+  let landRequested = false;
+  let lastGoodPoll = 0;
+  const setMeta = (t) => { if ($("pf-meta")) $("pf-meta").textContent = t; };
+  const supervised = () => supervisedName || radioActiveName || activeName;
+  const reportCurrent = () => lastGoodPoll > 0 && Date.now() - lastGoodPoll < 2000;
+  const riskyState = () => pendingCommand || (supervisedName && !reportCurrent()) || (pfSnapshot && (pfSnapshot.armed !== false || pfSnapshot.in_air !== false || ["landing", "fault"].includes(pfSnapshot.phase)));
 
-  // Безопасно обновить строку статуса (элемент может отсутствовать — не роняем runPreflight).
-  const setMeta = (t) => { const m = $("pf-meta"); if (m) m.textContent = t; };
-
-  // "Check it" is available only when the link is truly on air.
+  function commandNotice(text, bad = false) {
+    $("pf-command").textContent = text;
+    $("pf-command").classList.toggle("bad", bad);
+  }
+  function disableFlightControls() {
+    ["btn-arm", "btn-disarm", "btn-motor-test", "btn-test-hop", "btn-test-takeoff", "btn-hold", "btn-test-return"].forEach((id) => { if ($(id)) $(id).disabled = true; });
+    document.querySelectorAll("[data-step]").forEach((b) => b.disabled = true);
+  }
   function setCheckAvail(on) {
-    const b = $("btn-check");
-    if (b) b.disabled = !on;
-    if (!on) hideStep4();
+    if ($("btn-check")) $("btn-check").disabled = !on;
+    // Never hide LAND or stop polling because a transport status turned red.
+    if (!on) disableFlightControls();
   }
   function hideStep4() {
+    if (riskyState()) return;
     $("step4-wstep")?.classList.add("hidden");
-    if (pfTimer) { clearInterval(pfTimer); pfTimer = null; }
-    setPfState("passed");
-  }
-
-  // State machine — exactly one of arm-row / armed-block / flight-block is shown.
-  function setPfState(s) {
-    pfState = s;
-    $("pf-row-arm")?.classList.toggle("hidden", s !== "passed");
-    $("pf-armed-block")?.classList.toggle("hidden", s !== "armed");
-    $("pf-flight-block")?.classList.toggle("hidden", s !== "flying");
-    if (s === "flying") pfFlyingSince = Date.now();
-  }
-
-  async function onCheckClick() {
-    if (!radioActiveName) return;
-    $("step4-wstep")?.classList.remove("hidden");
-    await runPreflight();
     if (pfTimer) clearInterval(pfTimer);
-    pfTimer = setInterval(runPreflight, 2000);   // live checklist + flight state
+    pfTimer = null; supervisedName = null; pfSnapshot = null;
+    disableFlightControls();
+  }
+  async function onCheckClick() {
+    const name = radioActiveName || activeName;
+    if (!name) return;
+    startSupervision(name);
     $("step4-wstep")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-
-  function renderPfChecks(list) {
-    const grid = $("pf-grid");
-    if (!grid) return;
-    grid.innerHTML = "";
-    (list || []).forEach((c) => {
-      const el = document.createElement("div");
-      el.className = `check ${c.status || "info"}`;
-      el.innerHTML = `<div class="check-label">${c.label}</div><div class="check-value">${c.value}</div>`;
-      grid.appendChild(el);
-    });
-  }
-
-  function setArmEnabled(on, hint) {
-    const b = $("btn-arm");
-    if (b) b.disabled = !on;
-    if (hint) $("arm-hint").textContent = hint;
-  }
-
-  async function runPreflight() {
-    const name = radioActiveName;
-    if (!name) return;
-    let r, j;
-    try {
-      r = await fetch(`/api/real/preflight/${encodeURIComponent(name)}`, { cache: "no-store" });
-      j = await r.json();
-    } catch (e) {
-      setMeta("request failed");
-      return;
-    }
-    if (!r.ok || (j && j.ok === false && j.error)) {
-      setMeta((j && (j.message || j.error)) || "no data");
-      const v = $("pf-verdict");
-      v.className = "pf-verdict bad";
-      v.textContent = "⛔ " + ((j && j.message) || "no telemetry yet");
-      if (pfState === "passed") setArmEnabled(false, "no telemetry");
-      return;
-    }
-    setMeta("checked just now · live");
-    renderPfChecks(j.checks);
-    const v = $("pf-verdict");
-    if (j.ok) {
-      v.className = "pf-verdict ok";
-      v.innerHTML = `✓ PASSED — ready to arm <span class="sub">all systems green</span>`;
-    } else {
-      v.className = "pf-verdict bad";
-      v.innerHTML = `⛔ BLOCKED — ${j.reasons.length} issue(s) <span class="sub">arming disabled until all checks pass</span>`;
-    }
-    if (pfState === "passed") {
-      setArmEnabled(j.ok, j.ok ? "ready — first arm with props OFF" : "blocked by pre-flight");
-      $("pf-override")?.classList.toggle("hidden", !!j.ok);
-    }
-
-    // --- flight state from telemetry: LAND must appear whenever airborne ---
-    if (j.in_air) {
-      if (pfState !== "flying") setPfState("flying");
-      const alt = (typeof j.alt === "number") ? j.alt : null;
-      $("pf-alt").textContent = alt != null ? `${alt.toFixed(1)} m` : "airborne";
-    } else if (pfState === "flying" && Date.now() - pfFlyingSince > 4000) {
-      // landed (grace so a brief poll gap doesn't bounce the UI). Real drone
-      // auto-disarms after landing → back to the pre-flight/arm view.
-      setPfState("passed");
-    }
-  }
-
-  // guided command with auto-acquire of control authority.
-  async function droneCommand(action, extra) {
-    const veh = "veh_" + radioActiveName;
-    const body = Object.assign({ action }, extra || {});
-    const send = () => fetch(`/api/drone/${encodeURIComponent(veh)}/command`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    });
-    let r = await send();
-    if (r.status === 403) {   // no control — take it and retry once
-      await fetch("/api/control/acquire", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope: "system" }),
-      });
-      r = await send();
-    }
-    return r.json().catch(() => ({}));
-  }
-
-  async function doArm(force) {
-    if (!radioActiveName) return;
-    setArmEnabled(false, "arming…");
-    await droneCommand("arm", force ? { force: true } : null);
-    setPfState("armed");
-  }
-
-  async function doMotorTest() {
-    setPfState("armed");
-    await droneCommand("motor_test");
-    // server spins the motors then auto-disarms — return to the arm view after.
-    setTimeout(() => { if (pfState === "armed") setPfState("passed"); }, 5000);
-  }
-
-  async function doTestHop() {
-    setPfState("flying");                 // LAND visible immediately — before it leaves the ground
-    $("pf-alt").textContent = "lifting…";
-    await droneCommand("test_hop");
-    // safety fallback: if telemetry never reports landing, don't strand the UI in flight view
-    setTimeout(() => { if (pfState === "flying" && Date.now() - pfFlyingSince > 28000) setPfState("passed"); }, 30000);
-  }
-
-  async function doDisarm() {
-    await droneCommand("disarm");
-    setPfState("passed");
+  function startSupervision(name) {
+    if (supervisedName && supervisedName !== name && riskyState()) return;
+    if (supervisedName !== name) { pfSnapshot = null; pendingCommand = null; landRequested = false; }
+    supervisedName = name;
+    $("step4-wstep").classList.remove("hidden");
+    if (!pfTimer) pfTimer = setInterval(runPreflight, 750);
     runPreflight();
   }
+  function renderCheckGrid(id, list) {
+    const grid = $(id);
+    grid.replaceChildren();
+    (list || []).forEach((c) => {
+      const el = document.createElement("div");
+      el.className = "check " + (c.status || "info");
+      const label = document.createElement("div"), value = document.createElement("div");
+      label.className = "check-label"; value.className = "check-value";
+      label.textContent = c.label; value.textContent = c.value;
+      el.append(label, value); grid.append(el);
+    });
+  }
+  async function runPreflight() {
+    const name = supervisedName;
+    if (!name || pfPollBusy) return;
+    pfPollBusy = true;
+    try {
+      const r = await fetch(`/api/real/preflight/${encodeURIComponent(name)}`, { cache: "no-store", signal: AbortSignal.timeout(2500) });
+      const j = await r.json();
+      if (name !== supervisedName) return;
+      if (!r.ok || !j.bridge_id) throw new Error(j.message || j.error || "Waiting for real-airframe telemetry");
+      if (pfSnapshot?.bridge_id && pfSnapshot.bridge_id !== j.bridge_id) {
+        commandNotice("Bridge restarted. Previous commands will not be retried.", true);
+        pendingCommand = null;
+      }
+      pfSnapshot = j;
+      lastGoodPoll = Date.now();
+      disableFlightControls();
+      setMeta(`report age ${j.report_age_s ?? "?"} s · ${name}`);
+      renderCheckGrid("pf-grid", j.checks);
+      renderCheckGrid("flight-check-grid", j.flight_checks);
+      const verdict = $("pf-verdict");
+      verdict.className = "pf-verdict " + (j.ok ? "ok" : "bad");
+      verdict.textContent = j.ok ? "PASSED · continuously ready" : "BLOCKED · " + (j.reasons || []).join("; ");
+      $("pf-state").textContent = `${j.phase || "unknown"} · armed: ${j.armed == null ? "unknown" : j.armed ? "YES" : "NO"} · airborne: ${j.in_air == null ? "unknown" : j.in_air ? "YES" : "NO"} · altitude: ${Number.isFinite(j.alt) ? j.alt.toFixed(2) + " m" : "unknown"} · ${j.mode || "mode unknown"}`;
+      if (j.flight_active) $("pf-state").textContent += ` · ${j.flight_remaining_s ?? "?"} s remaining`;
+      $("pf-px4").textContent = (j.status_text || []).map((m) => m.type + ": " + m.text).join("\n") || "No messages received";
+      if (pendingCommand) {
+        const result = (j.commands || []).find((c) => c.id === pendingCommand.id);
+        if (result) {
+          const terminal = ["completed", "rejected", "failed", "cancelled"].includes(result.status);
+          commandNotice(`${result.action}: ${result.status}${result.reason ? " · " + result.reason : ""}`, ["rejected", "failed"].includes(result.status));
+          if (terminal) pendingCommand = null;
+        } else if (Date.now() - pendingCommand.since > 5000) {
+          commandNotice("No command acknowledgement. State is unknown; do not retry flight actions. LAND remains available.", true);
+        }
+      }
+      const blocked = !!pendingCommand || j.operation_busy || landRequested;
+      $("btn-arm").disabled = blocked || !j.can_arm;
+      $("btn-disarm").disabled = blocked || !j.can_disarm || j.armed !== true;
+      $("btn-motor-test").disabled = blocked || !j.can_arm;
+      $("btn-test-hop").disabled = blocked || !j.flight_ready || j.armed !== true || j.in_air !== false;
+      $("btn-test-takeoff").disabled = $("btn-test-hop").disabled;
+      $("arm-hint").textContent = j.can_arm ? "10 seconds of confirmed readiness · ready" : j.operation_reason || "Resolve the reported blockers";
+      const canMove = !blocked && j.can_move;
+      document.querySelectorAll("[data-step]").forEach((b) => b.disabled = !canMove);
+      $("btn-hold").disabled = !canMove; $("btn-test-return").disabled = !canMove;
+      $("land-hint").textContent = j.operation_reason || "LAND needs a working link. Keep RC backup ready.";
+      if (j.phase === "landed" && j.armed === false && j.in_air === false) landRequested = false;
+    } catch (e) {
+      if (name === supervisedName) {
+        lastGoodPoll = 0;
+        disableFlightControls();
+        // Keep the last confirmed state visible, labelled unknown. Never
+        // convert a failed poll into a landed/disarmed state.
+        $("pf-verdict").className = "pf-verdict bad";
+        $("pf-verdict").textContent = "STATE UNKNOWN · " + e.message;
+        renderCheckGrid("pf-grid", [{label: "TELEMETRY", value: "Unavailable — previous readiness is no longer valid", status: "bad"}]);
+        renderCheckGrid("flight-check-grid", []);
+        if (!$("pf-state").textContent.startsWith("LAST CONFIRMED")) $("pf-state").textContent = "LAST CONFIRMED · " + $("pf-state").textContent;
+        $("arm-hint").textContent = "Telemetry unavailable; actions blocked";
+        setMeta("telemetry unavailable · LAND / RC backup");
+      }
+    } finally { pfPollBusy = false; }
+  }
+
+  async function droneCommand(action, extra = {}) {
+    const name = supervised();
+    if (!name) return;
+    if (action === "land") { landRequested = true; closeModals(); disableFlightControls(); }
+    const send = () => fetch(`/api/drone/${encodeURIComponent("veh_" + name)}/command`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...extra }), signal: AbortSignal.timeout(2500),
+    });
+    try {
+      if (action !== "land") {
+        const lease = await fetch("/api/control/acquire", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "system" }), signal: AbortSignal.timeout(2500) });
+        if (!lease.ok) throw new Error("Another operator holds control. LAND remains available.");
+      }
+      const r = await send();
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.message || j.error || j.detail || `HTTP ${r.status}`);
+      // HTTP acceptance only means queued. Completion comes from the bridge.
+      if (action !== "test_keepalive") {
+        pendingCommand = { id: j.command_id, action, since: Date.now() };
+        commandNotice(`${action}: queued · awaiting bridge acknowledgement`);
+        disableFlightControls();
+      }
+      return j;
+    } catch (e) {
+      if (action !== "test_keepalive") commandNotice(`${action}: ${e.message}${action === "land" ? " · landing NOT confirmed; use RC backup if needed" : ""}`, true);
+      return null;
+    }
+  }
+  async function doArm() { await droneCommand("arm", { safety_confirmed: true }); }
+  async function doMotorTest() { await droneCommand("motor_test", { safety_confirmed: true }); }
+  async function doTestHop() { await droneCommand(requestedFlight, { safety_confirmed: true }); }
+  async function doDisarm() { await droneCommand("disarm"); }
+
+  // This is separate from polling: successful web requests alone must never
+  // count as an operator keepalive inside the bridge. No command auto-retry.
+  setInterval(async () => {
+    if (keepaliveBusy || !supervisedName || !pfSnapshot || !reportCurrent()) return;
+    if (!pendingCommand && pfSnapshot.armed !== true && !pfSnapshot.flight_active) return;
+    keepaliveBusy = true;
+    try { await droneCommand("test_keepalive"); } finally { keepaliveBusy = false; }
+  }, 1000);
 
   // ---- modals ----
   function openModal(id) {
@@ -726,6 +754,10 @@
   }
 
   function selectProfile(p) {
+    if (supervisedName && p.name !== supervisedName && riskyState()) {
+      commandNotice("Keep the active drone selected until landing and disarm are confirmed.", true);
+      return;
+    }
     activeName = p.name;
     lastTestOk = false;
     fillForm(p);
@@ -741,6 +773,7 @@
 
   // Сброс формы под новый профиль (кнопка New profile).
   function newProfile() {
+    if (supervisedName && riskyState()) { commandNotice("Land and disarm before switching profiles.", true); return; }
     activeName = null;
     lastTestOk = false;
     $("f-name").value = "";
@@ -862,8 +895,17 @@
   // open confirmation modals
   $("btn-arm")?.addEventListener("click", () => openModal("modal-arm"));
   $("btn-motor-test")?.addEventListener("click", () => openModal("modal-motor"));
-  $("btn-test-hop")?.addEventListener("click", () => openModal("modal-hop"));
-  $("btn-force-arm")?.addEventListener("click", () => doArm(true));   // expert override (already blocked)
+  $("btn-test-hop")?.addEventListener("click", () => { requestedFlight = "test_hop"; openModal("modal-hop"); });
+  $("btn-test-takeoff")?.addEventListener("click", () => { requestedFlight = "test_takeoff"; openModal("modal-hop"); });
+  document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => droneCommand("test_step", { direction: b.dataset.step })));
+  $("btn-test-return")?.addEventListener("click", () => droneCommand("test_return"));
+  $("btn-hold")?.addEventListener("click", () => droneCommand("hold"));
+  $("btn-net-connect")?.addEventListener("click", async () => {
+    if (!validateForm()) return;
+    await saveProfile();
+    if (activeName) { await connectProfile(activeName); startSupervision(activeName); }
+  });
+
 
   // confirm actions
   $("confirm-arm")?.addEventListener("click", () => { closeModals(); doArm(false); });
@@ -893,7 +935,13 @@
   $("f-net-host")?.addEventListener("input", () => setFieldError($("f-net-host"), ""));
   $("f-net-port")?.addEventListener("input", () => setFieldError($("f-net-port"), ""));
   // Если оператор уходит со страницы — корректно гасим радио-линк.
-  window.addEventListener("beforeunload", () => { if (radioActiveName && radioLink) radioLink.stop(); });
+  window.addEventListener("beforeunload", () => {
+    if (supervisedName && riskyState()) {
+      fetch(`/api/drone/${encodeURIComponent("veh_" + supervisedName)}/command`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "land" }), keepalive: true }).catch(() => {});
+    }
+    // Do not intentionally tear down the radio ahead of a LAND request.
+    // Closing the tab still loses Web Serial; PX4 loss failsafes are required.
+  });
 
   // Любое изменение формы инвалидирует прошлый Test Connection.
   $("real-form").addEventListener("input", () => {
