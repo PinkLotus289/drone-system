@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="/static/launcher.css?v=5" />
-  <link rel="stylesheet" href="/static/real_connect.css?v=16" />
+  <link rel="stylesheet" href="/static/real_connect.css?v=17" />
 </head>
 <body class="launcher-body">
 
@@ -30,7 +30,8 @@
     </div>
   </div>
   <div class="topbar-spacer"></div>
-  <a href="/local_launch" class="back-link">Quick launch →</a>
+  <a href="/real?demo=1" class="back-link" id="demo-entry">Try without a drone →</a>
+  <a href="/local_launch" class="back-link" id="quick-launch-link">Quick launch →</a>
 </header>
 
 <main class="real-main">
@@ -58,6 +59,37 @@
       <div class="w-sub">Name the drone, pick a channel, connect, then save.</div>
       <div class="content-card-actions" style="margin-top:8px">
         <button class="btn btn-ghost hidden" id="btn-delete-profile">Delete profile</button>
+      </div>
+    </div>
+
+    <div id="demo-panel" class="demo-panel hidden">
+      <div class="demo-heading"><strong>DEMO · VIRTUAL BOARD</strong><a href="/real" id="demo-exit">Exit demo → real setup</a></div>
+      <p>Try the real checklist and command workflow with generated telemetry. No radio, real drone or PX4 physics is connected. Your demo is isolated from other operators.</p>
+      <div class="demo-layout">
+        <svg id="demo-position" viewBox="0 0 320 210" role="img" aria-label="Virtual drone position relative to test start">
+          <rect x="1" y="1" width="318" height="208" rx="6" fill="#f8fafb" stroke="#dce1e6"/>
+          <path d="M160 24V186M79 105H241" stroke="#dce1e6"/>
+          <circle cx="160" cy="105" r="66" fill="none" stroke="#b9c5d0" stroke-dasharray="4 4"/>
+          <text x="160" y="16" text-anchor="middle" font-size="11">Forward / North</text>
+          <text x="248" y="109" font-size="11">Right / East</text>
+          <circle cx="160" cy="105" r="3" fill="#7c8793"/>
+          <path id="demo-trail" fill="none" stroke="#4685d0" stroke-width="2"/>
+          <g id="demo-drone" transform="translate(160 105)"><circle r="7" fill="#1d5ed8"/><path d="M0 -13L-4 -6H4Z" fill="#1d5ed8"/></g>
+          <text id="demo-position-label" x="160" y="200" text-anchor="middle" font-size="11">Test start · height 0.00 m</text>
+        </svg>
+        <div>
+          <label for="demo-scenario">Training scenario</label>
+          <select id="demo-scenario">
+            <option value="healthy">Healthy systems</option>
+            <option value="compass">Compass failure</option>
+            <option value="battery">Low battery</option>
+            <option value="gps">GPS not ready</option>
+            <option value="link_loss">Radio link lost</option>
+          </select>
+          <p class="hint">Wait for the 10-second readiness check, then try the bench test or arm for flight. In flight, use the movement buttons or LAND. A fault blocks arming or interrupts the test.</p>
+          <button type="button" class="btn" id="btn-demo-reset">Reset demo</button>
+          <p class="small" id="demo-status" role="status">Starting virtual board…</p>
+        </div>
       </div>
     </div>
 
@@ -214,8 +246,8 @@
               <button type="button" class="btn" id="btn-motor-test" disabled>Spin motors &amp; disarm</button>
             </div>
             <details class="pf-actions">
-              <summary>Flight safeguards · read from PX4</summary>
-              <p class="hint">Flight stays blocked until RC backup and onboard loss-of-control safeguards are verified. Review required values in QGroundControl; this panel does not change them.</p>
+              <summary id="flight-safeguards-label">Flight safeguards · read from PX4</summary>
+              <p class="hint" id="flight-safeguards-hint">Flight stays blocked until RC backup and onboard loss-of-control safeguards are verified. Review required values in QGroundControl; this panel does not change them.</p>
               <div class="check-grid" id="flight-check-grid"></div>
             </details>
             <div class="pf-actions">
@@ -235,7 +267,7 @@
               <button type="button" class="btn" id="btn-test-return" disabled>Return to test start</button>
             </div>
             <div class="pf-actions">
-              <div class="pf-a-t">Latest PX4 messages</div>
+              <div class="pf-a-t" id="board-messages-label">Latest PX4 messages</div>
               <div class="mono small" id="pf-px4">No messages received</div>
             </div>
             <div class="pf-emergency">
@@ -327,6 +359,6 @@
 </div>
 
 <script src="/static/radio_link.js?v=5"></script>
-<script src="/static/real_connect.js?v=22"></script>
+<script src="/static/real_connect.js?v=23"></script>
 </body>
 </html>

@@ -19,6 +19,7 @@ from drone_core.infra.messaging.mqtt_bus import MqttBus
 
 from .launcher import router as launcher_router
 from .real import router as real_router
+from .flight_demo import router as demo_router
 from . import auth as authmod
 from .control import ControlAuthority
 from .real_control import real_supervisor
@@ -46,6 +47,7 @@ app.mount(
 # Подключаем ПЕРЕД остальными роутами, чтобы / отдавал лаунчер.
 app.include_router(launcher_router)
 app.include_router(real_router)
+app.include_router(demo_router)
 
 settings = Settings()
 bus = MqttBus(settings.MQTT_URL, client_id="ui-bus")

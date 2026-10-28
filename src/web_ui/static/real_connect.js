@@ -1,6 +1,9 @@
 // Real Connect UI: профили + форма + Test Connection
 (() => {
   const $ = (id) => document.getElementById(id);
+  const demoMode = new URLSearchParams(location.search).get("demo") === "1";
+  let demoTrace = [];
+  let demoEpoch = 0;
 
   // ========== State ==========
   let profiles = [];
@@ -371,6 +374,7 @@
 
   // ========== Render profile list ==========
   async function loadConnections() {
+    if (demoMode) return;
     try {
       const r = await fetch("/api/real/connections");
       if (r.status === 401) { location.href = "/login"; return; }
@@ -567,18 +571,21 @@
   }
   async function runPreflight() {
     const name = supervisedName;
+    const epoch = demoEpoch;
     if (!name || pfPollBusy) return;
     pfPollBusy = true;
     try {
-      const r = await fetch(`/api/real/preflight/${encodeURIComponent(name)}`, { cache: "no-store", signal: AbortSignal.timeout(2500) });
+      const r = await fetch(demoMode ? "/api/demo/flight/state" : `/api/real/preflight/${encodeURIComponent(name)}`, { cache: "no-store", signal: AbortSignal.timeout(2500) });
       const j = await r.json();
-      if (name !== supervisedName) return;
+      if (name !== supervisedName || epoch !== demoEpoch) return;
       if (!r.ok || !j.bridge_id) throw new Error(j.message || j.error || "Waiting for real-airframe telemetry");
+      if (demoMode && j.demo !== true) throw new Error("Demo report expected; controls blocked");
       if (pfSnapshot?.bridge_id && pfSnapshot.bridge_id !== j.bridge_id) {
         commandNotice("Bridge restarted. Previous commands will not be retried.", true);
         pendingCommand = null;
       }
       pfSnapshot = j;
+      if (demoMode) renderDemo(j);
       lastGoodPoll = Date.now();
       disableFlightControls();
       setMeta(`report age ${j.report_age_s ?? "?"} s · ${name}`);
@@ -606,11 +613,11 @@
       $("btn-motor-test").disabled = blocked || !j.can_arm;
       $("btn-test-hop").disabled = blocked || !j.flight_ready || j.armed !== true || j.in_air !== false;
       $("btn-test-takeoff").disabled = $("btn-test-hop").disabled;
-      $("arm-hint").textContent = j.can_arm ? "10 seconds of confirmed readiness · ready" : j.operation_reason || "Resolve the reported blockers";
+      $("arm-hint").textContent = j.in_air ? "Airborne · use flight controls or LAND" : j.armed ? "Armed · start a test or disarm on the ground" : j.can_arm ? "10 seconds of confirmed readiness · ready" : j.operation_reason || "Resolve the reported blockers";
       const canMove = !blocked && j.can_move;
       document.querySelectorAll("[data-step]").forEach((b) => b.disabled = !canMove);
       $("btn-hold").disabled = !canMove; $("btn-test-return").disabled = !canMove;
-      $("land-hint").textContent = j.operation_reason || "LAND needs a working link. Keep RC backup ready.";
+      $("land-hint").textContent = j.operation_reason || (demoMode ? "DEMO · cancels the virtual test and lands the training model." : "LAND needs a working link. Keep RC backup ready.");
       if (j.phase === "landed" && j.armed === false && j.in_air === false) landRequested = false;
     } catch (e) {
       if (name === supervisedName) {
@@ -633,12 +640,12 @@
     const name = supervised();
     if (!name) return;
     if (action === "land") { landRequested = true; closeModals(); disableFlightControls(); }
-    const send = () => fetch(`/api/drone/${encodeURIComponent("veh_" + name)}/command`, {
+    const send = () => fetch(demoMode ? "/api/demo/flight/command" : `/api/drone/${encodeURIComponent("veh_" + name)}/command`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, ...extra }), signal: AbortSignal.timeout(2500),
     });
     try {
-      if (action !== "land") {
+      if (!demoMode && action !== "land") {
         const lease = await fetch("/api/control/acquire", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "system" }), signal: AbortSignal.timeout(2500) });
         if (!lease.ok) throw new Error("Another operator holds control. LAND remains available.");
       }
@@ -661,6 +668,41 @@
   async function doMotorTest() { await droneCommand("motor_test", { safety_confirmed: true }); }
   async function doTestHop() { await droneCommand(requestedFlight, { safety_confirmed: true }); }
   async function doDisarm() { await droneCommand("disarm"); }
+
+  function renderDemo(j) {
+    $("demo-status").textContent = j.link_connected ? "Virtual telemetry connected · " + j.scenario : "Virtual link lost · last reported position shown. Restore Healthy systems to reconnect.";
+    if (j.position && j.link_connected) {
+      const x = 160 + j.position.east_m * 22, y = 105 - j.position.north_m * 22;
+      $("demo-drone").setAttribute("transform", `translate(${x} ${y})`);
+      if (!demoTrace.length || Math.hypot(x-demoTrace.at(-1)[0], y-demoTrace.at(-1)[1]) > .2) demoTrace.push([x, y]);
+      demoTrace = demoTrace.slice(-240);
+      $("demo-trail").setAttribute("d", demoTrace.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`).join(" "));
+      $("demo-position-label").textContent = `N ${j.position.north_m.toFixed(2)} m · E ${j.position.east_m.toFixed(2)} m · height ${(j.alt ?? 0).toFixed(2)} m`;
+    }
+  }
+
+  async function startDemo(reset = false) {
+    demoEpoch++;
+    disableFlightControls();
+    $("btn-demo-reset").disabled = true;
+    if (pfTimer) clearInterval(pfTimer);
+    pfTimer = null;
+    try {
+      if (reset) {
+        const stopped = await fetch("/api/demo/flight", { method: "DELETE", signal: AbortSignal.timeout(2500) });
+        if (!stopped.ok) throw new Error("Could not reset demo");
+      }
+      const r = await fetch("/api/demo/flight/start", { method: "POST", signal: AbortSignal.timeout(2500) });
+      const j = await r.json();
+      if (!r.ok || !j.demo) throw new Error(j.detail || "Could not start demo");
+      supervisedName = null; pfSnapshot = null; pendingCommand = null; landRequested = false;
+      demoTrace = []; $("demo-trail").setAttribute("d", "");
+      $("demo-scenario").value = j.scenario;
+      commandNotice(reset ? "Demo reset. The virtual board is disarmed at the start position." : "Demo connected. Wait for 10 seconds of continuous readiness.");
+      startSupervision("walkthrough");
+    } catch (e) { $("demo-status").textContent = e.message; }
+    finally { $("btn-demo-reset").disabled = false; }
+  }
 
   // This is separate from polling: successful web requests alone must never
   // count as an operator keepalive inside the bridge. No command auto-retry.
@@ -936,6 +978,7 @@
   $("f-net-port")?.addEventListener("input", () => setFieldError($("f-net-port"), ""));
   // Если оператор уходит со страницы — корректно гасим радио-линк.
   window.addEventListener("beforeunload", () => {
+    if (demoMode) return; // never send a walkthrough command to a hardware endpoint
     if (supervisedName && riskyState()) {
       fetch(`/api/drone/${encodeURIComponent("veh_" + supervisedName)}/command`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "land" }), keepalive: true }).catch(() => {});
     }
@@ -952,6 +995,34 @@
   });
 
   // ========== Init ==========
+  if (demoMode) {
+    document.body.classList.add("demo-page");
+    document.title = "Skybite · Virtual board demo";
+    document.querySelector(".brand-name").textContent = "Virtual board · DEMO";
+    $("demo-panel").classList.remove("hidden");
+    $("demo-entry").classList.add("hidden");
+    $("quick-launch-link").classList.add("hidden");
+    $("form-title").textContent = "Virtual board walkthrough";
+    $("step4-wstep").querySelector(".wstep-num").textContent = "1";
+    document.querySelector(".w-sub").textContent = "Same controls and safety checks, with an isolated training model.";
+    [...document.querySelectorAll("#real-form > .wstep")].slice(0, 3).forEach((el) => el.classList.add("hidden"));
+    $("btn-delete-profile").classList.add("hidden");
+    $("btn-land").textContent = "DEMO LAND · cancel virtual test";
+    $("board-messages-label").textContent = "Virtual board events";
+    $("flight-safeguards-label").textContent = "Training safeguards · simulated values";
+    $("flight-safeguards-hint").textContent = "These generated values let you rehearse the checks. No parameters are read from or written to a real autopilot.";
+    $("btn-demo-reset").addEventListener("click", () => startDemo(true));
+    $("demo-exit").addEventListener("click", () => { fetch("/api/demo/flight", { method: "DELETE", keepalive: true }).catch(() => {}); });
+    $("demo-scenario").addEventListener("change", async () => {
+      try {
+        const r = await fetch("/api/demo/flight/scenario", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({scenario: $("demo-scenario").value}), signal: AbortSignal.timeout(2500)});
+        if (!r.ok) throw new Error("Scenario change failed; reset the demo");
+        await runPreflight();
+      } catch (e) { $("demo-status").textContent = e.message; }
+    });
+    startDemo();
+    return;
+  }
   setConnType("radio");   // дефолтный канал — Radio (Serial-форма убрана)
   loadProfiles();
   loadConnections();
