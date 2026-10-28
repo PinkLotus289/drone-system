@@ -1,5 +1,6 @@
 import asyncio
 import time
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock
 
 import httpx
@@ -43,6 +44,9 @@ def test_demo_requires_auth_and_continuous_readiness(monkeypatch):
         assert manager.get(sid).board.armed is False
         client.cookies.clear()
         assert (await client.post("/api/demo/flight/start")).status_code == 401
+        redirect = await client.get("/real?demo=1", follow_redirects=False)
+        assert redirect.status_code == 302
+        assert parse_qs(urlparse(redirect.headers["location"]).query)["next"] == ["/real?demo=1"]
 
     run_test(check, monkeypatch)
 

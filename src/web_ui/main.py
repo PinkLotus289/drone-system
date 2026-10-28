@@ -3,6 +3,7 @@ import json
 import asyncio
 import time
 import uuid
+from urllib.parse import urlencode
 import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -76,7 +77,8 @@ async def _auth_guard(request: Request, call_next):
     if payload is None or payload.get("sid") in revoked_sids:
         if path.startswith("/api/"):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        return RedirectResponse(url=f"/login?next={path}", status_code=302)
+        next_path = path + (f"?{request.url.query}" if request.url.query else "")
+        return RedirectResponse(url="/login?" + urlencode({"next": next_path}), status_code=302)
     request.state.auth = payload  # {op, sid, exp}
     return await call_next(request)
 
