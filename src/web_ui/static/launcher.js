@@ -221,6 +221,8 @@
         if (lastConn) {
           if (p.connection_type === "serial") {
             lastConn.textContent = `${p.serial_port || "?"} · ${p.serial_baud || "?"}`;
+          } else if (p.connection_type === "virtual") {
+            lastConn.textContent = "virtual test port · no hardware";
           } else {
             lastConn.textContent = `${p.connection_type || "?"} · ${p.net_host || ""}:${p.net_port || "?"}`;
           }

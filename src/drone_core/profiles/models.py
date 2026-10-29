@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 # Web Serial и реле на сервере (см. radio_relay.py). Реальный system_address для
 # MAVSDK при этом — локальный tcp://127.0.0.1:<relay_port>, его выдаёт реле, а не
 # профиль; поэтому connection_url() для radio не используется.
-ConnectionType = Literal["serial", "udp", "tcp", "radio"]
+ConnectionType = Literal["serial", "udp", "tcp", "radio", "virtual"]
 
 # Имя профиля = slug: латиница+цифры+_-, чтобы безопасно писать в имя файла.
 NAME_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,40}$")
@@ -49,6 +49,8 @@ class DroneProfile(BaseModel):
 
     def connection_url(self) -> str:
         """MAVSDK system_address для этого профиля."""
+        if self.connection_type == "virtual":
+            raise ValueError("Virtual test ports have no hardware connection URL")
         if self.connection_type == "serial":
             if not self.serial_port:
                 raise ValueError("serial_port не задан")

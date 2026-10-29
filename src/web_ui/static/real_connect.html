@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="/static/launcher.css?v=5" />
-  <link rel="stylesheet" href="/static/real_connect.css?v=17" />
+  <link rel="stylesheet" href="/static/real_connect.css?v=18" />
 </head>
 <body class="launcher-body">
 
@@ -30,7 +30,6 @@
     </div>
   </div>
   <div class="topbar-spacer"></div>
-  <a href="/real?demo=1" class="back-link" id="demo-entry">Try without a drone →</a>
   <a href="/local_launch" class="back-link" id="quick-launch-link">Quick launch →</a>
 </header>
 
@@ -62,36 +61,6 @@
       </div>
     </div>
 
-    <div id="demo-panel" class="demo-panel hidden">
-      <div class="demo-heading"><strong>DEMO · VIRTUAL BOARD</strong><a href="/real" id="demo-exit">Exit demo → real setup</a></div>
-      <p>Try the real checklist and command workflow with generated telemetry. No radio, real drone or PX4 physics is connected. Your demo is isolated from other operators.</p>
-      <div class="demo-layout">
-        <svg id="demo-position" viewBox="0 0 320 210" role="img" aria-label="Virtual drone position relative to test start">
-          <rect x="1" y="1" width="318" height="208" rx="6" fill="#f8fafb" stroke="#dce1e6"/>
-          <path d="M160 24V186M79 105H241" stroke="#dce1e6"/>
-          <circle cx="160" cy="105" r="66" fill="none" stroke="#b9c5d0" stroke-dasharray="4 4"/>
-          <text x="160" y="16" text-anchor="middle" font-size="11">Forward / North</text>
-          <text x="248" y="109" font-size="11">Right / East</text>
-          <circle cx="160" cy="105" r="3" fill="#7c8793"/>
-          <path id="demo-trail" fill="none" stroke="#4685d0" stroke-width="2"/>
-          <g id="demo-drone" transform="translate(160 105)"><circle r="7" fill="#1d5ed8"/><path d="M0 -13L-4 -6H4Z" fill="#1d5ed8"/></g>
-          <text id="demo-position-label" x="160" y="200" text-anchor="middle" font-size="11">Test start · height 0.00 m</text>
-        </svg>
-        <div>
-          <label for="demo-scenario">Training scenario</label>
-          <select id="demo-scenario">
-            <option value="healthy">Healthy systems</option>
-            <option value="compass">Compass failure</option>
-            <option value="battery">Low battery</option>
-            <option value="gps">GPS not ready</option>
-            <option value="link_loss">Radio link lost</option>
-          </select>
-          <p class="hint">Wait for the 10-second readiness check, then try the bench test or arm for flight. In flight, use the movement buttons or LAND. A fault blocks arming or interrupts the test.</p>
-          <button type="button" class="btn" id="btn-demo-reset">Reset demo</button>
-          <p class="small" id="demo-status" role="status">Starting virtual board…</p>
-        </div>
-      </div>
-    </div>
 
     <form id="real-form" class="wizard" autocomplete="off">
 
@@ -135,8 +104,15 @@
 
             <!-- Radio params — ground USB radio via browser Web Serial -->
             <div id="block-radio" class="hidden">
-              <div class="radio-support" id="radio-support"></div>
               <div class="field">
+                <label class="field-l" for="f-radio-source">Port</label>
+                <select id="f-radio-source">
+                  <option value="hardware">USB radio · select a port on this computer</option>
+                  <option value="virtual">Virtual test port · no drone required</option>
+                </select>
+              </div>
+              <div class="radio-support" id="radio-support"></div>
+              <div class="field" id="radio-baud-field">
                 <label class="field-l">Radio baud <span class="hint">SiK default 57600</span></label>
                 <div class="seg" id="radio-baud-seg">
                   <button type="button" class="seg-btn active" data-rbaud="57600">57600</button>
@@ -182,7 +158,7 @@
                 <span class="radio-dot" id="radio-dot"></span>
                 <span class="mono small" id="radio-status">idle</span>
               </div>
-              <p class="hint">Plug the ground radio into USB and press “Select port and connect”. When the link is <b>on air</b>, press “Check it” to run the pre-flight.</p>
+              <p class="hint" id="radio-connect-hint">Plug the ground radio into USB and press “Select port and connect”. When the link is <b>on air</b>, press “Check it” to run the pre-flight.</p>
             </div>
 
             <!-- UDP / TCP actions -->
@@ -229,6 +205,38 @@
             </span>
           </div>
           <div class="p-body">
+
+    <details id="demo-panel" class="demo-panel hidden">
+      <summary>Virtual test port · scenarios, position and reset</summary>
+      <div class="demo-heading"><strong>VIRTUAL TEST PORT · NO HARDWARE</strong><span class="mono small">Same connection and flight workflow</span></div>
+      <p>Connected through the virtual test port. Telemetry is generated; these controls cannot send commands to a real drone.</p>
+      <div class="demo-layout">
+        <svg id="demo-position" viewBox="0 0 320 210" role="img" aria-label="Virtual drone position relative to test start">
+          <rect x="1" y="1" width="318" height="208" rx="6" fill="#f8fafb" stroke="#dce1e6"/>
+          <path d="M160 24V186M79 105H241" stroke="#dce1e6"/>
+          <circle cx="160" cy="105" r="66" fill="none" stroke="#b9c5d0" stroke-dasharray="4 4"/>
+          <text x="160" y="16" text-anchor="middle" font-size="11">Forward / North</text>
+          <text x="248" y="109" font-size="11">Right / East</text>
+          <circle cx="160" cy="105" r="3" fill="#7c8793"/>
+          <path id="demo-trail" fill="none" stroke="#4685d0" stroke-width="2"/>
+          <g id="demo-drone" transform="translate(160 105)"><circle r="7" fill="#1d5ed8"/><path d="M0 -13L-4 -6H4Z" fill="#1d5ed8"/></g>
+          <text id="demo-position-label" x="160" y="200" text-anchor="middle" font-size="11">Test start · height 0.00 m</text>
+        </svg>
+        <div>
+          <label for="demo-scenario">Training scenario</label>
+          <select id="demo-scenario">
+            <option value="healthy">Healthy systems</option>
+            <option value="compass">Compass failure</option>
+            <option value="battery">Low battery</option>
+            <option value="gps">GPS not ready</option>
+            <option value="link_loss">Radio link lost</option>
+          </select>
+          <p class="hint">Wait for the 10-second readiness check, then try the bench test or arm for flight. In flight, use the movement buttons or LAND. A fault blocks arming or interrupts the test.</p>
+          <button type="button" class="btn" id="btn-demo-reset">Reset virtual board</button>
+          <p class="small" id="demo-status" role="status">Virtual port disconnected</p>
+        </div>
+      </div>
+    </details>
 
             <div class="pf-verdict" id="pf-verdict">running…</div>
             <div class="check-grid" id="pf-grid"></div>
@@ -359,6 +367,6 @@
 </div>
 
 <script src="/static/radio_link.js?v=5"></script>
-<script src="/static/real_connect.js?v=23"></script>
+<script src="/static/real_connect.js?v=24"></script>
 </body>
 </html>

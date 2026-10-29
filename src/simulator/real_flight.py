@@ -68,6 +68,8 @@ class RealFlight:
             flight_active=self.flight_active,
             commands=list(self.results.values())[-8:],
         )
+        if not result["link_connected"]:
+            result["operation_reason"] = "Telemetry unavailable — current landing and disarm state are unknown."
         result["can_arm"] = result["can_arm"] and not busy and self.phase not in {"landing", "fault"}
         result["can_move"] = (
             self.flight_active

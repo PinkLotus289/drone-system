@@ -97,3 +97,26 @@ def test_disconnect_blocked_while_armed_or_state_unknown(api, monkeypatch):
     main.app.state.active_drones = {}
     assert client.post("/api/real/disconnect/11").status_code == 409
     disconnect.assert_not_called()
+
+
+def test_saved_virtual_profile_cannot_be_connected_to_a_hardware_bridge(api, monkeypatch, tmp_path):
+    from web_ui import real
+    from drone_core.profiles.store import ProfileStore
+    from drone_core.profiles.models import DroneProfile
+    import pytest
+
+    client, _, bus = api
+    monkeypatch.setattr(real, "profile_store", ProfileStore(tmp_path))
+    connect = Mock()
+    relay = Mock()
+    monkeypatch.setattr(real.real_supervisor, "connect", connect)
+    monkeypatch.setattr(real.radio_manager, "ensure", relay)
+    saved = client.post("/api/real/profiles", json={"name": "virtual_quad", "connection_type": "virtual"})
+    assert saved.status_code == 200
+    assert client.get("/api/real/profiles/virtual_quad").json()["connection_type"] == "virtual"
+    assert client.post("/api/real/connect/virtual_quad").status_code == 409
+    with pytest.raises(ValueError, match="no hardware"):
+        DroneProfile(name="virtual_quad", connection_type="virtual").connection_url()
+    connect.assert_not_called()
+    relay.assert_not_called()
+    bus.publish.assert_not_called()

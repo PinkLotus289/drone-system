@@ -184,7 +184,9 @@ class DemoSession:
 
     def state(self):
         self.last_access = time.monotonic()
-        report = expire_report(self.bus.report, self.bus.received)
+        # Read the current controller state; the monitor timestamp still
+        # expires a dead session. Do not mix a new scenario with an old report.
+        report = expire_report(self.controller.snapshot(), self.bus.received)
         reported = self.controller.safety.values.get("ned") or {"n": 0, "e": 0}
         report.update(
             demo=True,
@@ -192,6 +194,19 @@ class DemoSession:
             veh="walkthrough",
             position={"north_m": round(reported["n"], 2), "east_m": round(reported["e"], 2)},
             report_age_s=round(time.monotonic() - self.bus.received, 1) if self.bus.received else None,
+        )
+        values = self.controller.safety.values
+        report["telemetry"] = (
+            {
+                "lat": (values.get("position") or {}).get("lat"),
+                "lon": (values.get("position") or {}).get("lon"),
+                "alt": report.get("alt"),
+                "battery_pct": (values.get("battery") or {}).get("pct"),
+                "sat_count": (values.get("gps") or {}).get("satellites"),
+                "status": "FLYING" if report.get("in_air") else "IDLE",
+            }
+            if report.get("link_connected")
+            else {}
         )
         return report
 

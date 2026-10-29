@@ -1,7 +1,13 @@
 // Real Connect UI: профили + форма + Test Connection
 (() => {
   const $ = (id) => document.getElementById(id);
-  const demoMode = new URLSearchParams(location.search).get("demo") === "1";
+  let demoMode = false; // active virtual transport, never just a URL/UI selection
+  const portQuery = new URLSearchParams(location.search);
+  const virtualSelected = () => $("f-radio-source").value === "virtual";
+  const lockPort = (on) => {
+    ["f-name", "f-radio-source"].forEach(id => $(id).disabled = on);
+    document.querySelectorAll('[data-conn], [data-rbaud]').forEach(b => b.disabled = on);
+  };
   let demoTrace = [];
   let demoEpoch = 0;
 
@@ -69,7 +75,8 @@
     $("f-name").value = p.name || "";
     $("f-display").value = p.display_name || "";
     $("f-notes").value = p.notes || "";
-    setConnType(p.connection_type || "serial");
+    $("f-radio-source").value = p.connection_type === "virtual" ? "virtual" : "hardware";
+    setConnType(p.connection_type === "virtual" ? "radio" : (p.connection_type || "serial"));
     if (p.connection_type === "serial") {
       // Serial-форма убрана; legacy serial-профиль остаётся подключаемым с карточки,
       // но в форме показываем только baud (sel может отсутствовать).
@@ -97,7 +104,7 @@
     const data = {
       name,
       display_name: $("f-display").value.trim(),
-      connection_type: connType,
+      connection_type: connType === "radio" && virtualSelected() ? "virtual" : connType,
       notes: $("f-notes").value.trim(),
       // frame / battery_* опущены — бэкенд подставит дефолты (DroneProfile).
     };
@@ -162,16 +169,22 @@
     const connectBtn = $("btn-radio-connect");
     const autoBtn = $("btn-radio-autodetect");
     if (!el) return;
-    const ok = radioLink && RadioLink.isSupported();
-    if (ok) {
+    const virtual = virtualSelected();
+    const ok = virtual || (radioLink && RadioLink.isSupported());
+    if (virtual) {
+      el.className = "radio-support ok";
+      el.textContent = "Virtual test port — follows the same checks and commands, without USB or real hardware.";
+    } else if (ok) {
       el.className = "radio-support ok";
       el.innerHTML = "This browser supports Web Serial — radio connection available.";
     } else {
       el.className = "radio-support bad";
       el.innerHTML = "This browser does not support Web Serial. Open the page in <b>Chrome</b>, <b>Edge</b>, Brave or Opera on a desktop (not on a phone).";
     }
-    if (connectBtn) connectBtn.disabled = !ok;
-    if (autoBtn) autoBtn.style.display = ok ? "" : "none";
+    $("radio-baud-field").classList.toggle("hidden", virtual);
+    $("radio-connect-hint").textContent = virtual ? "Connect the virtual test port, then use Check it and the same flight controls as for a real board." : "Plug the ground radio into USB and press Select port and connect. When the link is on air, press Check it.";
+    if (connectBtn) { connectBtn.disabled = !ok; connectBtn.textContent = virtual ? "Connect to virtual test port" : "Select port and connect"; }
+    if (autoBtn) autoBtn.style.display = ok && !virtual ? "" : "none";
   }
 
   function setBaud(b) {
@@ -485,6 +498,20 @@
   }
 
   async function stopRadio() {
+    if (demoMode) {
+      if (riskyState()) { commandNotice("Land and disarm before disconnecting. Reset virtual board can clear a test fault.", true); return; }
+      const stopped = await fetch("/api/demo/flight", {method: "DELETE", signal: AbortSignal.timeout(2500)}).catch(() => null);
+      if (!stopped?.ok) { commandNotice("Virtual port disconnect failed; try again.", true); return; }
+      demoEpoch++; demoMode = false; radioActiveName = null;
+      sessionStorage.removeItem("virtualPortName");
+      pendingCommand = null; pfSnapshot = null; supervisedName = null; lastGoodPoll = 0;
+      if (pfTimer) clearInterval(pfTimer); pfTimer = null;
+      $("demo-panel").classList.add("hidden"); $("step4-wstep").classList.add("hidden");
+      $("btn-land").textContent = "LAND NOW · cancel test";
+      lockPort(false); resetRadioButtons(); setRadioStatus("disconnected", ""); setCheckAvail(false);
+      renderRadioSupport(); loadConnections();
+      return;
+    }
     if (supervisedName) {
       await runPreflight();
       if (!pfSnapshot?.can_disarm || pfSnapshot.armed !== false || riskyState()) {
@@ -505,6 +532,7 @@
     const data = readForm();
     // Профиль НЕ сохраняем — подключение работает с временным профилем на сервере
     // (имя = только ключ реле). Сохранение — отдельным действием по кнопке Save.
+    if (virtualSelected()) { await startDemo(true); return; }
     await startRadio(data.name, radioBaud);
   }
 
@@ -514,6 +542,8 @@
   let pfSnapshot = null;
   let pfPollBusy = false;
   let pendingCommand = null;
+  let commandSending = false;
+  let commandSequence = 0;
   let requestedFlight = "test_hop";
   let keepaliveBusy = false;
   let landRequested = false;
@@ -585,7 +615,12 @@
         pendingCommand = null;
       }
       pfSnapshot = j;
-      if (demoMode) renderDemo(j);
+      if (demoMode) {
+        renderDemo(j);
+        connections[name] = {connected: j.link_connected, virtual: true};
+        fleet["veh_" + name] = j.telemetry || {};
+        refreshLive();
+      }
       lastGoodPoll = Date.now();
       disableFlightControls();
       setMeta(`report age ${j.report_age_s ?? "?"} s · ${name}`);
@@ -595,6 +630,7 @@
       verdict.className = "pf-verdict " + (j.ok ? "ok" : "bad");
       verdict.textContent = j.ok ? "PASSED · continuously ready" : "BLOCKED · " + (j.reasons || []).join("; ");
       $("pf-state").textContent = `${j.phase || "unknown"} · armed: ${j.armed == null ? "unknown" : j.armed ? "YES" : "NO"} · airborne: ${j.in_air == null ? "unknown" : j.in_air ? "YES" : "NO"} · altitude: ${Number.isFinite(j.alt) ? j.alt.toFixed(2) + " m" : "unknown"} · ${j.mode || "mode unknown"}`;
+      if (!j.link_connected) $("pf-state").textContent = "STATE UNKNOWN · last controller phase: " + $("pf-state").textContent;
       if (j.flight_active) $("pf-state").textContent += ` · ${j.flight_remaining_s ?? "?"} s remaining`;
       $("pf-px4").textContent = (j.status_text || []).map((m) => m.type + ": " + m.text).join("\n") || "No messages received";
       if (pendingCommand) {
@@ -607,7 +643,8 @@
           commandNotice("No command acknowledgement. State is unknown; do not retry flight actions. LAND remains available.", true);
         }
       }
-      const blocked = !!pendingCommand || j.operation_busy || landRequested;
+      if (j.phase === "landed" && j.armed === false && j.in_air === false) landRequested = false;
+      const blocked = commandSending || !!pendingCommand || j.operation_busy || landRequested;
       $("btn-arm").disabled = blocked || !j.can_arm;
       $("btn-disarm").disabled = blocked || !j.can_disarm || j.armed !== true;
       $("btn-motor-test").disabled = blocked || !j.can_arm;
@@ -618,7 +655,6 @@
       document.querySelectorAll("[data-step]").forEach((b) => b.disabled = !canMove);
       $("btn-hold").disabled = !canMove; $("btn-test-return").disabled = !canMove;
       $("land-hint").textContent = j.operation_reason || (demoMode ? "DEMO · cancels the virtual test and lands the training model." : "LAND needs a working link. Keep RC backup ready.");
-      if (j.phase === "landed" && j.armed === false && j.in_air === false) landRequested = false;
     } catch (e) {
       if (name === supervisedName) {
         lastGoodPoll = 0;
@@ -639,13 +675,18 @@
   async function droneCommand(action, extra = {}) {
     const name = supervised();
     if (!name) return;
+    const isKeepalive = action === "test_keepalive";
+    if (!isKeepalive && action !== "land" && (commandSending || pendingCommand)) return null;
+    if (!isKeepalive) { commandSending = true; disableFlightControls(); }
+    const sequence = isKeepalive ? commandSequence : ++commandSequence;
+    const targetEpoch = demoEpoch, virtual = demoMode;
     if (action === "land") { landRequested = true; closeModals(); disableFlightControls(); }
-    const send = () => fetch(demoMode ? "/api/demo/flight/command" : `/api/drone/${encodeURIComponent("veh_" + name)}/command`, {
+    const send = () => fetch(virtual ? "/api/demo/flight/command" : `/api/drone/${encodeURIComponent("veh_" + name)}/command`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, ...extra }), signal: AbortSignal.timeout(2500),
     });
     try {
-      if (!demoMode && action !== "land") {
+      if (!virtual && action !== "land") {
         const lease = await fetch("/api/control/acquire", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "system" }), signal: AbortSignal.timeout(2500) });
         if (!lease.ok) throw new Error("Another operator holds control. LAND remains available.");
       }
@@ -653,16 +694,16 @@
       const j = await r.json();
       if (!r.ok || !j.ok) throw new Error(j.message || j.error || j.detail || `HTTP ${r.status}`);
       // HTTP acceptance only means queued. Completion comes from the bridge.
-      if (action !== "test_keepalive") {
+      if (!isKeepalive && targetEpoch === demoEpoch && sequence === commandSequence) {
         pendingCommand = { id: j.command_id, action, since: Date.now() };
         commandNotice(`${action}: queued · awaiting bridge acknowledgement`);
         disableFlightControls();
       }
       return j;
     } catch (e) {
-      if (action !== "test_keepalive") commandNotice(`${action}: ${e.message}${action === "land" ? " · landing NOT confirmed; use RC backup if needed" : ""}`, true);
+      if (!isKeepalive && sequence === commandSequence) commandNotice(`${action}: ${e.message}${action === "land" ? " · landing NOT confirmed; use RC backup if needed" : ""}`, true);
       return null;
-    }
+    } finally { if (!isKeepalive && sequence === commandSequence) commandSending = false; }
   }
   async function doArm() { await droneCommand("arm", { safety_confirmed: true }); }
   async function doMotorTest() { await droneCommand("motor_test", { safety_confirmed: true }); }
@@ -682,6 +723,8 @@
   }
 
   async function startDemo(reset = false) {
+    if (!demoMode && radioActiveName) { commandNotice("Disconnect the current radio first.", true); return; }
+    const name = demoMode ? radioActiveName : $("f-name").value.trim();
     demoEpoch++;
     disableFlightControls();
     $("btn-demo-reset").disabled = true;
@@ -695,11 +738,18 @@
       const r = await fetch("/api/demo/flight/start", { method: "POST", signal: AbortSignal.timeout(2500) });
       const j = await r.json();
       if (!r.ok || !j.demo) throw new Error(j.detail || "Could not start demo");
+      demoMode = true; radioActiveName = name;
+      lockPort(true); sessionStorage.setItem("virtualPortName", name);
+      $("btn-radio-connect").classList.add("hidden"); $("btn-radio-disconnect").classList.remove("hidden");
+      $("demo-panel").classList.remove("hidden");
+      $("btn-land").textContent = "LAND NOW · virtual test port";
+      $("board-messages-label").textContent = "Board events · virtual test port";
+      setCheckAvail(true); setRadioStatus("virtual test port connected", "on");
       supervisedName = null; pfSnapshot = null; pendingCommand = null; landRequested = false;
       demoTrace = []; $("demo-trail").setAttribute("d", "");
       $("demo-scenario").value = j.scenario;
-      commandNotice(reset ? "Demo reset. The virtual board is disarmed at the start position." : "Demo connected. Wait for 10 seconds of continuous readiness.");
-      startSupervision("walkthrough");
+      commandNotice(reset ? "Virtual board reset and disarmed at the start position." : "Virtual test port connected. Wait for 10 seconds of continuous readiness.");
+      startSupervision(name);
     } catch (e) { $("demo-status").textContent = e.message; }
     finally { $("btn-demo-reset").disabled = false; }
   }
@@ -796,8 +846,8 @@
   }
 
   function selectProfile(p) {
-    if (supervisedName && p.name !== supervisedName && riskyState()) {
-      commandNotice("Keep the active drone selected until landing and disarm are confirmed.", true);
+    if (radioActiveName && p.name !== radioActiveName) {
+      commandNotice("Disconnect the current port before switching profiles.", true);
       return;
     }
     activeName = p.name;
@@ -815,7 +865,7 @@
 
   // Сброс формы под новый профиль (кнопка New profile).
   function newProfile() {
-    if (supervisedName && riskyState()) { commandNotice("Land and disarm before switching profiles.", true); return; }
+    if (radioActiveName) { commandNotice("Disconnect the current port before creating a new profile.", true); return; }
     activeName = null;
     lastTestOk = false;
     $("f-name").value = "";
@@ -848,6 +898,8 @@
       let sub;
       if (p.connection_type === "serial") {
         sub = `serial · ${p.serial_port?.split("/").pop() || "?"} @ ${p.serial_baud}`;
+      } else if (p.connection_type === "virtual") {
+        sub = "virtual test port · no hardware";
       } else if (p.connection_type === "radio") {
         sub = `radio · ${p.serial_baud || 57600} baud · browser`;
       } else {
@@ -994,38 +1046,30 @@
     }
   });
 
+  // Test hardware is selected in the same port control as real USB hardware.
+  $("f-radio-source").addEventListener("change", () => {
+    if (virtualSelected() && !$("f-name").value.trim()) $("f-name").value = "virtual_quad";
+    renderRadioSupport();
+  });
+  $("btn-demo-reset").addEventListener("click", () => startDemo(true));
+  $("demo-scenario").addEventListener("change", async () => {
+    if (!demoMode) return;
+    try {
+      const r = await fetch("/api/demo/flight/scenario", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({scenario: $("demo-scenario").value}), signal: AbortSignal.timeout(2500)});
+      if (!r.ok) throw new Error("Scenario change failed; reset the virtual board");
+      await runPreflight();
+    } catch (e) { $("demo-status").textContent = e.message; }
+  });
+
   // ========== Init ==========
-  if (demoMode) {
-    document.body.classList.add("demo-page");
-    document.title = "Skybite · Virtual board demo";
-    document.querySelector(".brand-name").textContent = "Virtual board · DEMO";
-    $("demo-panel").classList.remove("hidden");
-    $("demo-entry").classList.add("hidden");
-    $("quick-launch-link").classList.add("hidden");
-    $("form-title").textContent = "Virtual board walkthrough";
-    $("step4-wstep").querySelector(".wstep-num").textContent = "1";
-    document.querySelector(".w-sub").textContent = "Same controls and safety checks, with an isolated training model.";
-    [...document.querySelectorAll("#real-form > .wstep")].slice(0, 3).forEach((el) => el.classList.add("hidden"));
-    $("btn-delete-profile").classList.add("hidden");
-    $("btn-land").textContent = "DEMO LAND · cancel virtual test";
-    $("board-messages-label").textContent = "Virtual board events";
-    $("flight-safeguards-label").textContent = "Training safeguards · simulated values";
-    $("flight-safeguards-hint").textContent = "These generated values let you rehearse the checks. No parameters are read from or written to a real autopilot.";
-    $("btn-demo-reset").addEventListener("click", () => startDemo(true));
-    $("demo-exit").addEventListener("click", () => { fetch("/api/demo/flight", { method: "DELETE", keepalive: true }).catch(() => {}); });
-    $("demo-scenario").addEventListener("change", async () => {
-      try {
-        const r = await fetch("/api/demo/flight/scenario", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({scenario: $("demo-scenario").value}), signal: AbortSignal.timeout(2500)});
-        if (!r.ok) throw new Error("Scenario change failed; reset the demo");
-        await runPreflight();
-      } catch (e) { $("demo-status").textContent = e.message; }
-    });
-    startDemo();
-    return;
+  const resumeVirtual = sessionStorage.getItem("virtualPortName");
+  if (portQuery.get("port") === "virtual" || portQuery.get("demo") === "1" || resumeVirtual) {
+    $("f-radio-source").value = "virtual";
+    $("f-name").value = resumeVirtual || "virtual_quad";
   }
-  setConnType("radio");   // дефолтный канал — Radio (Serial-форма убрана)
-  loadProfiles();
-  loadConnections();
-  setInterval(loadConnections, 2000);   // живой статус + телеметрия подключённых бортов
+  setConnType("radio");
+  loadProfiles(); loadConnections();
+  setInterval(loadConnections, 2000);
   updateSaveButton();
+  if (resumeVirtual) startDemo();
 })();

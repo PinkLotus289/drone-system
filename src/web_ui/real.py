@@ -286,6 +286,8 @@ async def connect_real(name: str):
             raise HTTPException(status_code=404, detail="profile_not_found")
     # Radio: связь идёт через браузерный Web Serial → WS → локальное реле.
     # MAVSDK-мост цепляется к реле по localhost tcp, а не к железу напрямую.
+    if profile.connection_type == "virtual":
+        raise HTTPException(status_code=409, detail="Virtual test ports use the isolated test session, never a hardware bridge")
     if profile.connection_type == "radio":
         relay = await radio_manager.ensure(name)
         # Creating the TCP relay yields to the event loop; simulation might

@@ -113,6 +113,30 @@ def test_loss_of_connection_revokes_readiness_immediately():
     assert not s.report()["link_connected"]
 
 
+def test_disconnected_telemetry_is_unknown_instead_of_green_cached_data():
+    s, _ = ready()
+    s.observe("connection", False)
+    report = s.report()
+    for key in ("armed", "in_air", "landed", "mode", "alt"):
+        assert report[key] is None
+    by_key = {check["key"]: check for check in report["checks"]}
+    for key in (
+        "heartbeat",
+        "gyro",
+        "mag",
+        "gps",
+        "battery",
+        "voltage",
+        "numeric",
+        "real_home",
+        "real_battery",
+        "real_gps",
+        "ground",
+    ):
+        assert by_key[key]["status"] == "bad"
+        assert "Unknown" in by_key[key]["value"]
+
+
 @pytest.mark.parametrize(
     "battery",
     [

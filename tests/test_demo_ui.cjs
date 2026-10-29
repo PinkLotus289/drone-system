@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
   await page.route('**/*', route => {
     const url = new URL(route.request().url());
     if (url.hostname !== '127.0.0.1') return route.abort();
-    if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/demo/flight')) {
+    if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/demo/flight') && !url.pathname.startsWith('/api/real/profiles') && !['/api/real/connections', '/api/fleet'].includes(url.pathname)) {
       forbidden.push(url.pathname); return route.abort();
     }
     return route.continue();
@@ -20,10 +20,15 @@ const assert = require('node:assert/strict');
     await page.locator(`#${id} .pf-modal-foot .btn-primary`).click();
   };
   try {
-    await page.goto('http://127.0.0.1:8073/real?demo=1');
-    await page.waitForFunction(() => document.getElementById('pf-meta').textContent.includes('walkthrough'));
+    await page.goto('http://127.0.0.1:8073/real');
+    await page.selectOption('#f-radio-source', 'virtual');
+    await page.locator('#btn-save').click();
+    await page.waitForFunction(() => document.querySelector('.pcard')?.textContent.includes('virtual test port'));
+    await page.locator('#btn-radio-connect').click();
+    await page.waitForFunction(() => document.getElementById('pf-meta').textContent.includes('virtual_quad'));
     assert(await page.locator('#btn-arm').isDisabled());
     await enabled('btn-arm');
+    await page.locator('#demo-panel > summary').click();
     await page.selectOption('#demo-scenario', 'compass');
     await page.waitForFunction(() => document.getElementById('pf-verdict').textContent.includes('CALIB MAG'));
     assert(await page.locator('#btn-arm').isDisabled());
@@ -55,10 +60,12 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(() => document.getElementById('demo-status').textContent.includes('connected'));
     assert((await page.locator('#pf-state').textContent()).includes('armed: NO'));
     await page.reload();
-    await page.waitForFunction(() => document.getElementById('pf-meta').textContent.includes('walkthrough'));
+    await page.waitForFunction(() => document.getElementById('pf-meta').textContent.includes('virtual_quad'));
     assert.equal(forbidden.length, 0, forbidden.join(', '));
     assert.equal(errors.length, 0, errors.join('\n'));
-    await page.request.delete('http://127.0.0.1:8073/api/demo/flight');
-    console.log('Demo UI passed: readiness, fault/recovery, motor test, arm, takeoff, move, return, LAND, link loss, reset, reload; no hardware requests.');
+    await page.locator('#btn-radio-disconnect').click();
+    await page.waitForFunction(() => !document.getElementById('btn-radio-connect').classList.contains('hidden'));
+    assert(await page.locator('#f-radio-source').isEnabled());
+    console.log('Virtual port UI passed: profile, select port, connect, readiness, fault/recovery, motor test, arm, takeoff, move, return, LAND, link loss, reset, reload; no hardware requests.');
   } finally { await browser.close(); }
 })().catch(e => {console.error(e); process.exitCode = 1;});

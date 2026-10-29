@@ -167,6 +167,16 @@ def test_watchdog_detects_operator_loss_radius_altitude_and_stale_data():
     assert "FRESHNESS" in c.violation()
 
 
+def test_old_landing_confirmation_is_not_presented_as_current_after_link_loss():
+    c, _ = controller()
+    c.phase, c.reason = "landed", "Landing and disarm confirmed"
+    c.safety.observe("connection", False)
+    report = c.snapshot()
+    assert "unknown" in report["operation_reason"]
+    assert report["armed"] is None
+    assert report["in_air"] is None
+
+
 def test_half_meter_step_uses_takeoff_heading_and_preserves_height():
     async def run():
         c, _ = controller()

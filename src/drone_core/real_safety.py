@@ -96,8 +96,36 @@ class RealSafety:
     def checks(self, airborne=False):
         result = self.basic(airborne)
         checks = result["checks"]
+        source = {
+            "heartbeat": "position",
+            "gyro": "health",
+            "accel": "health",
+            "mag": "health",
+            "global_pos": "health",
+            "home": "health",
+            "local_pos": "health",
+            "armable": "health",
+            "gps": "gps",
+            "battery": "battery",
+            "voltage": "battery",
+        }
+        for check in checks:
+            stream = source.get(check["key"])
+            if stream and (not self.connected or not self.fresh(stream)):
+                check.update(status="bad", value="Unknown · telemetry unavailable")
+            elif check["key"] == "armable" and self.values.get("armed") is True and self.fresh("armed"):
+                check.update(label="ARMED STATE", status="info", value="Armed · confirmed")
 
         def add(key, label, ok, value):
+            sources = {
+                "numeric": ("position", "ned", "attitude"),
+                "real_home": ("health",),
+                "real_battery": ("battery",),
+                "real_gps": ("gps",),
+                "ground": ("landed", "in_air"),
+            }
+            if key in sources and (not self.connected or not all(self.fresh(stream) for stream in sources[key])):
+                ok, value = False, "Unknown · telemetry unavailable"
             checks.append({"key": key, "label": label, "status": "ok" if ok else "bad", "value": value})
 
         add("connection", "MAVLINK LINK", self.connected, "connected" if self.connected else "lost / unknown")
@@ -181,11 +209,13 @@ class RealSafety:
             "checks": checks,
             "reasons": reasons,
             "stable_for_s": round(stable_for, 1),
-            "armed": armed,
-            "in_air": self.values.get("in_air"),
-            "landed": self.values.get("landed"),
-            "mode": self.values.get("mode"),
-            "alt": (self.values.get("position") or {}).get("alt"),
+            "armed": armed if self.fresh("armed") else None,
+            "in_air": self.values.get("in_air") if self.fresh("in_air") else None,
+            "landed": self.values.get("landed") if self.fresh("landed") else None,
+            "mode": self.values.get("mode") if self.fresh("mode") else None,
+            "alt": (self.values.get("position") or {}).get("alt")
+            if self.connected and self.fresh("position")
+            else None,
             "can_arm": stable and armed is False and not airborne,
             "can_disarm": self.fresh("landed")
             and self.fresh("in_air")
@@ -219,13 +249,18 @@ class RealSafety:
         params = self.values.get("params") or {}
         for name, (_, rule, expected) in PARAM_RULES.items():
             value = params.get(name)
-            ok = self.fresh("params", 30) and finite(value) and rule(value)
+            verified = self.connected and self.fresh("params", 30)
+            ok = verified and finite(value) and rule(value)
             checks.append(
                 {
                     "key": name,
                     "label": name,
                     "status": "ok" if ok else "bad",
-                    "value": str(value) if ok else f"{value if value is not None else 'unknown'}; need {expected}",
+                    "value": "Unknown · parameter verification unavailable"
+                    if not verified
+                    else str(value)
+                    if ok
+                    else f"{value if value is not None else 'unknown'}; need {expected}",
                 }
             )
         return checks
@@ -244,6 +279,11 @@ def expire_report(report, received_at, now=None):
             link_connected=False,
             flight_ready=False,
             verdict="BLOCKED",
+            armed=None,
+            in_air=None,
+            landed=None,
+            mode=None,
+            alt=None,
         )
         reason = "BRIDGE TELEMETRY: stale / not received"
         report["reasons"] = [reason, *report.get("reasons", [])]

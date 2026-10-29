@@ -79,7 +79,11 @@ def test_fault_blocks_arm_then_recovery_restarts_stability_timer(monkeypatch):
         session = manager.get(sid)
         session.controller.safety.good_since = time.monotonic() - 11
         assert session.controller.snapshot()["can_arm"]
+        await asyncio.sleep(0.25)
+        assert (await client.get("/api/demo/flight/state")).json()["can_arm"]
         await client.post("/api/demo/flight/scenario", json={"scenario": "compass"})
+        immediate = (await client.get("/api/demo/flight/state")).json()
+        assert immediate["scenario"] == "compass" and not immediate["can_arm"]
         assert not session.controller.snapshot()["can_arm"]
         assert any("MAG" in r for r in session.controller.snapshot()["reasons"])
         await client.post("/api/demo/flight/scenario", json={"scenario": "healthy"})
