@@ -1068,7 +1068,13 @@
     $("f-name").value = resumeVirtual || "virtual_quad";
   }
   setConnType("radio");
-  loadProfiles(); loadConnections();
+  loadProfiles().then(() => {
+    if (resumeVirtual) {
+      const saved = profiles.find(p => p.name === resumeVirtual && p.connection_type === "virtual");
+      if (saved) selectProfile(saved);
+    }
+  });
+  loadConnections();
   setInterval(loadConnections, 2000);
   updateSaveButton();
   if (resumeVirtual) startDemo();

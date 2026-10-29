@@ -61,6 +61,7 @@ const assert = require('node:assert/strict');
     assert((await page.locator('#pf-state').textContent()).includes('armed: NO'));
     await page.reload();
     await page.waitForFunction(() => document.getElementById('pf-meta').textContent.includes('virtual_quad'));
+    await page.waitForFunction(() => document.getElementById('form-title').textContent.includes('virtual_quad'));
     assert.equal(forbidden.length, 0, forbidden.join(', '));
     assert.equal(errors.length, 0, errors.join('\n'));
     await page.locator('#btn-radio-disconnect').click();
