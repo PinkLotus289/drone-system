@@ -177,6 +177,18 @@ def test_old_landing_confirmation_is_not_presented_as_current_after_link_loss():
     assert report["in_air"] is None
 
 
+def test_landing_confirmation_keeps_the_watchdog_trigger_visible():
+    async def run():
+        c, _ = controller()
+        await c._land_operation("time-limit", "Test flight time limit reached")
+        assert c.phase == "landed"
+        assert "time limit" in c.snapshot()["operation_reason"]
+        assert "confirmed" in c.snapshot()["operation_reason"]
+        await c.close()
+
+    asyncio.run(run())
+
+
 def test_half_meter_step_uses_takeoff_heading_and_preserves_height():
     async def run():
         c, _ = controller()

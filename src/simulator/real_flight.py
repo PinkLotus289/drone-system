@@ -46,6 +46,7 @@ class RealFlight:
         self.task = None
         self.phase = "idle"
         self.reason = ""
+        self.landing_reason = ""
         self.owner = None
         self.last_operator = 0.0
         self.started = None
@@ -195,6 +196,7 @@ class RealFlight:
         raise TimeoutError("Telemetry did not confirm the requested state")
 
     async def _operation(self, cid, action, payload):
+        self.reason = self.landing_reason = ""
         self.result(cid, action, "running")
         try:
             if action == "arm":
@@ -304,13 +306,14 @@ class RealFlight:
         # call offboard.stop() after LAND: that API requests HOLD itself.
         try:
             await self._rpc(self.system.action.land())
-            self.reason = "LAND accepted; waiting for confirmed landing and auto-disarm"
+            self.reason = f"{self.landing_reason or 'Landing requested'} · LAND accepted; waiting for confirmed landing and auto-disarm"
         except Exception as exc:
-            self.reason = f"LAND unconfirmed: {exc}; retrying — use RC backup if link is lost"
+            self.reason = f"{self.landing_reason or 'Landing requested'} · LAND unconfirmed: {exc}; retrying — use RC backup if link is lost"
             log.error("[%s] %s", self.name, self.reason)
         self._last_land = self.safety.clock()
 
     async def _land_operation(self, cid, reason):
+        self.landing_reason = reason
         self.phase, self.reason = "landing", reason
         log.warning("[%s] [LAND] %s", self.name, reason)
         async with self._land_lock:
@@ -340,6 +343,8 @@ class RealFlight:
 
     def _finish_landing(self):
         self.phase, self.owner, self.reason = "landed", None, "Landing and disarm confirmed"
+        if self.landing_reason:
+            self.reason += f" · {self.landing_reason}"
         self.flight_active = False
         self.started = None
         self.offboard_started = None
